@@ -1,12 +1,16 @@
 name: build-rp2040
+
 on:
   push:
     paths:
       - 'firmware/**'
-  workflow_call:
+      - '.github/workflows/build-rp2040.yml'
+  workflow_dispatch:
+
 defaults:
   run:
     shell: bash --noprofile --norc -x -e -o pipefail {0}
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -14,84 +18,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
-      - name: Install compiler, libraries and tools
+
+      - name: Install toolchain
         run: |
           sudo apt update
-          sudo apt install -y --no-install-recommends gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib srecord
-      - name: Build
+          sudo apt install -y --no-install-recommends \
+            gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib srecord
+
+      - name: Build feather only
+        working-directory: firmware
         run: |
-          mkdir build
-          cd build
-          cmake ..
-          make
-          cd ..
-          mkdir build-boards
-          cd build-boards
-          PICO_BOARD=remapper cmake ..
-          make remapper_dual_combined
-          cd ..
-          mkdir build-board_v7
-          cd build-board_v7
-          PICO_BOARD=remapper_v7 cmake ..
-          make remapper_dual_combined
-          cd ..
-          mkdir build-board_v8
-          cd build-board_v8
-          PICO_BOARD=remapper_v8 cmake ..
-          make remapper
-          cd ..
           mkdir build-feather
           cd build-feather
           PICO_BOARD=feather_host cmake ..
-          make remapper
-          cd ..
-          mkdir build-waveshare_rp2040_pizero
-          cd build-waveshare_rp2040_pizero
-          PICO_BOARD=waveshare_rp2040_pizero cmake ..
-          make remapper
-          cd ..
-          mkdir build-pico2
-          cd build-pico2
-          PICO_BOARD=pico2 cmake ..
-          make remapper remapper_dual_a remapper_dual_b remapper_dual_combined
-          cd ..
-          mkdir build-waveshare_rp2350_usb_a
-          cd build-waveshare_rp2350_usb_a
-          PICO_BOARD=waveshare_rp2350_usb_a cmake ..
-          make remapper
-          cd ..
-          mkdir build-flatbox_rev4
-          cd build-flatbox_rev4
-          PICO_BOARD=flatbox_rev4 cmake ..
-          make remapper
-          cd ..
-          mkdir build-flatbox_rev8
-          cd build-flatbox_rev8
-          PICO_BOARD=flatbox_rev8 cmake ..
-          make remapper
-          cd ..
-          mkdir build-waveshare_rp2350_pizero
-          cd build-waveshare_rp2350_pizero
-          PICO_BOARD=waveshare_rp2350_pizero cmake ..
-          make remapper
-          cd ..
-          mkdir artifacts
-          mv build/*.uf2 artifacts
-          rm artifacts/flash_b_side.uf2
-          mv build-boards/remapper_dual_combined.uf2 artifacts/remapper_board.uf2
-          mv build-board_v7/remapper_dual_combined.uf2 artifacts/remapper_board_v7.uf2
-          mv build-board_v8/remapper.uf2 artifacts/remapper_board_v8.uf2
-          mv build-feather/remapper.uf2 artifacts/remapper_feather.uf2
-          mv build-waveshare_rp2040_pizero/remapper.uf2 artifacts/remapper_waveshare_rp2040_pizero.uf2
-          mv build-pico2/remapper.uf2 artifacts/remapper_pico2.uf2
-          mv build-pico2/remapper_dual_a.uf2 artifacts/remapper_pico2_dual_a.uf2
-          mv build-pico2/remapper_dual_b.uf2 artifacts/remapper_pico2_dual_b.uf2
-          mv build-pico2/remapper_dual_combined.uf2 artifacts/remapper_pico2_dual_combined.uf2
-          mv build-waveshare_rp2350_usb_a/remapper.uf2 artifacts/remapper_waveshare_rp2350_usb_a.uf2
-          mv build-flatbox_rev4/remapper.uf2 artifacts/remapper_flatbox_rev4.uf2
-          mv build-flatbox_rev8/remapper.uf2 artifacts/remapper_flatbox_rev8.uf2
-          mv build-waveshare_rp2350_pizero/remapper.uf2 artifacts/remapper_waveshare_rp2350_pizero.uf2
-        working-directory: ./firmware
+          make -j$(nproc)
+          mkdir -p ../../artifacts
+          cp remapper.uf2 ../../artifacts/remapper_feather.uf2
+
       - uses: actions/upload-artifact@v4
         with:
-          path: firmware/artifacts/*
+          name: firmware-rp2040
+          path: artifacts/remapper_feather.uf2
