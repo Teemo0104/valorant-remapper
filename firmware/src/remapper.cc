@@ -1456,15 +1456,14 @@ void process_mapping(bool auto_repeat) {
             }
         }
     }
-    // ============================================================
-    // 后坐力宏（移植自 CH32 main.c）
+// ============================================================
+    // 后坐力宏(移植自 CH32 main.c)
     // 控制：
     //   B5 (前进侧键) 装 Track 弹道
     //   中键          装 Galil 弹道
-    //   B4 (后退侧键) 卸下，并立即沿原路退回起点
+    //   B4 (后退侧键) 卸下,并立即沿原路退回起点
     //   左键按下      若已装弹则开始回放
-    //   左键松开      停止回放，沿累计反向距离退回原点
-    // 注入位置：reverse_mapping 循环结束后、macro_queue 处理之前
+    //   左键松开      停止回放,沿累计反向距离退回原点
     // ============================================================
     {
         constexpr uint32_t USAGE_X     = 0x00010030;
@@ -1473,11 +1472,9 @@ void process_mapping(bool auto_repeat) {
         constexpr uint32_t USAGE_BTN_M = 0x00090003;
         constexpr uint32_t USAGE_BTN_4 = 0x00090004;
         constexpr uint32_t USAGE_BTN_5 = 0x00090005;
-        constexpr uint8_t  RETURN_STEPS  = 30;
-        constexpr uint8_t  RETURN_STEP_MS = 4;  // 每步间隔 4ms,30 步约 120ms
+        constexpr uint16_t RETURN_TOTAL_FRAMES = 120;  // 回退总耗时 ≈120ms
 
-        // —— 状态槽指针（首次执行时分配；assign_if_absent=true 会触发描述符重派生,
-        //     之后传入的鼠标报告就会自动写入这些 slot）——
+        // —— 状态槽指针(首次执行时分配)——
         static int32_t* p_btn_l = nullptr;
         static int32_t* p_btn_m = nullptr;
         static int32_t* p_btn_4 = nullptr;
@@ -1491,24 +1488,29 @@ void process_mapping(bool auto_repeat) {
             slots_inited = true;
         }
 
-        // —— 模式与回放状态 ——
+        // —— 模式 ——
         static bool armed_track = false;
         static bool armed_galil = false;
+
+        // —— 回放状态 ——
         static bool playing = false;
         static const recoil::TrackPoint* cur = nullptr;
         static uint16_t cur_len = 0;
         static uint16_t idx = 0;
         static uint8_t  step_remain = 0;
+        static int8_t  cur_dx_step = 0;
+        static int8_t  cur_dy_step = 0;
+        static uint8_t cur_dur     = 0;
 
-        // 累计反向距离（用于松开后回退）
-        static int32_t backx = 0, backy = 0;
+        // —— 已发射的反向累计(milli-units),用于松开后回退 ——
+        static int32_t backx_milli = 0;
+        static int32_t backy_milli = 0;
 
-        // 回退状态
+        // —— 回退状态 ——
         static bool returning = false;
-        static uint8_t ret_idx = 0;
-        static uint8_t ret_step_remain = 0;
+        static uint16_t ret_frames_left = 0;
 
-        // 上一帧按键状态（用于边沿检测）
+        // —— 上一帧按键状态 ——
         static bool prev_l = false, prev_m = false, prev_4 = false, prev_5 = false;
 
         bool btn_l = p_btn_l && (*p_btn_l != 0);
@@ -1523,12 +1525,26 @@ void process_mapping(bool auto_repeat) {
         bool has_x = our_usages_flat.count(USAGE_X) > 0;
         bool has_y = our_usages_flat.count(USAGE_Y) > 0;
 
-        // 启动回退过程（把 backx/backy 在若干帧内消化掉）
+        // 抹掉 accumulated 里 <1 像素 的残余,防止下次用户小幅移动被吃掉。
+        // 保留 drain 即将输出的整像素部分(用户的真实输入不受影响)。
+        auto clear_subpixel_residue = [&]() {
+            if (has_x) {
+                int32_t& a = accumulated[USAGE_X];
+                a -= a % 1000;
+            }
+            if (has_y) {
+                int32_t& a = accumulated[USAGE_Y];
+                a -= a % 1000;
+            }
+        };
+
         auto start_return = [&]() {
-            if (backx != 0 || backy != 0) {
+            if (backx_milli != 0 || backy_milli != 0) {
                 returning = true;
-                ret_idx = 0;
-                ret_step_remain = 0;
+                ret_frames_left = RETURN_TOTAL_FRAMES;
+            } else {
+                // 没反向距离就不走 returning,但仍要清掉因整数除法损失留下的残余
+                clear_subpixel_residue();
             }
         };
 
@@ -1542,78 +1558,88 @@ void process_mapping(bool auto_repeat) {
             armed_track = false;
         }
         if (btn_4) {
-            // B4 立即卸弹并打断当前回放
             armed_track = false;
             armed_galil = false;
             if (playing) {
                 playing = false;
+                step_remain = 0;
+                cur_dx_step = cur_dy_step = 0;
                 start_return();
             }
         }
 
-        // —— 触发回放（左键按下沿，且已装弹，且当前空闲）——
+        // —— 触发回放 ——
         if (edge_l && (armed_track || armed_galil) && !playing && !returning) {
             cur     = armed_galil ? recoil::GalilTrack : recoil::Track;
             cur_len = armed_galil ? recoil::GALIL_LEN : recoil::TRACK_LEN;
             idx = 0;
             step_remain = 0;
-            backx = 0;
-            backy = 0;
+            cur_dx_step = cur_dy_step = 0;
+            cur_dur = 0;
+            backx_milli = 0;
+            backy_milli = 0;
             playing = true;
         }
 
-        // —— 左键松开 → 停止回放并开始回退 ——
+        // —— 左键松开 → 立即停止并回退 ——
         if (playing && !btn_l) {
             playing = false;
+            step_remain = 0;
+            cur_dx_step = cur_dy_step = 0;
             start_return();
         }
 
-        // —— 推进回放 ——
+        // —— 推进回放(每帧分摊式)——
         if (playing) {
             if (step_remain == 0) {
                 if (idx < cur_len) {
-                    int32_t dx = cur[idx].dx;
-                    int32_t dy = cur[idx].dy;
-                    if (dx && has_x) accumulated[USAGE_X] += dx * 1000;
-                    if (dy && has_y) accumulated[USAGE_Y] += dy * 1000;
-                    backx -= dx;
-                    backy -= dy;
-                    step_remain = cur[idx].delay_ms;
-                    if (step_remain == 0) step_remain = 1;
+                    cur_dx_step = cur[idx].dx;
+                    cur_dy_step = cur[idx].dy;
+                    cur_dur     = cur[idx].delay_ms;
+                    if (cur_dur == 0) cur_dur = 1;
+                    step_remain = cur_dur;
+                    backx_milli -= (int32_t)cur_dx_step * 1000;
+                    backy_milli -= (int32_t)cur_dy_step * 1000;
                     idx++;
                 } else {
-                    // 弹道走完了
                     playing = false;
+                    cur_dx_step = cur_dy_step = 0;
                     start_return();
                 }
             }
-            if (step_remain > 0) step_remain--;
+            if (step_remain > 0) {
+                if (cur_dx_step != 0 && has_x) {
+                    accumulated[USAGE_X] += (int32_t)cur_dx_step * 1000 / cur_dur;
+                }
+                if (cur_dy_step != 0 && has_y) {
+                    accumulated[USAGE_Y] += (int32_t)cur_dy_step * 1000 / cur_dur;
+                }
+                step_remain--;
+            }
         }
 
-        // —— 推进回退 ——
+        // —— 推进回退(整段平摊到 RETURN_TOTAL_FRAMES 帧)——
         if (returning && !playing) {
-            if (ret_step_remain == 0) {
-                uint8_t left = RETURN_STEPS - ret_idx;
-                if (left > 0) {
-                    int32_t dx = backx / left;
-                    int32_t dy = backy / left;
-                    if (dx && has_x) accumulated[USAGE_X] += dx * 1000;
-                    if (dy && has_y) accumulated[USAGE_Y] += dy * 1000;
-                    backx -= dx;
-                    backy -= dy;
-                }
-                ret_idx++;
-                ret_step_remain = RETURN_STEP_MS;
-                if (ret_idx >= RETURN_STEPS) {
-                    // 余数补齐（防止整数除法吃掉最后几像素）
-                    if (backx && has_x) accumulated[USAGE_X] += backx * 1000;
-                    if (backy && has_y) accumulated[USAGE_Y] += backy * 1000;
-                    backx = 0;
-                    backy = 0;
-                    returning = false;
-                }
+            if (ret_frames_left > 1) {
+                int32_t step_x = backx_milli / (int32_t)ret_frames_left;
+                int32_t step_y = backy_milli / (int32_t)ret_frames_left;
+                if (step_x != 0 && has_x) accumulated[USAGE_X] += step_x;
+                if (step_y != 0 && has_y) accumulated[USAGE_Y] += step_y;
+                backx_milli -= step_x;
+                backy_milli -= step_y;
+                ret_frames_left--;
+            } else {
+                // 最后一帧:把残余的 milli-units 全部发出去
+                if (backx_milli != 0 && has_x) accumulated[USAGE_X] += backx_milli;
+                if (backy_milli != 0 && has_y) accumulated[USAGE_Y] += backy_milli;
+                backx_milli = 0;
+                backy_milli = 0;
+                ret_frames_left = 0;
+                returning = false;
+                // 抹掉因整数除法/分摊累计造成的 <1 像素 残余,
+                // 否则下次用户小幅移动的第一下会被吃掉,出现顿挫感
+                clear_subpixel_residue();
             }
-            if (ret_step_remain > 0) ret_step_remain--;
         }
 
         prev_l = btn_l;
