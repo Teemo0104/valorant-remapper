@@ -1456,7 +1456,7 @@ void process_mapping(bool auto_repeat) {
             }
         }
     }
-// ============================================================
+    // ============================================================
     // 后坐力宏(移植自 CH32 main.c)
     // 控制：
     //   B5 (前进侧键) 装 Track 弹道
@@ -1464,6 +1464,10 @@ void process_mapping(bool auto_repeat) {
     //   B4 (后退侧键) 卸下,并立即沿原路退回起点
     //   左键按下      若已装弹则开始回放
     //   左键松开      停止回放,沿累计反向距离退回原点
+    //
+    // 平滑策略：每步把 dx*1000 / dy*1000 milli-units 注入"残余"账户,
+    // 每帧分摊 = 残余 / 剩余帧数。最后一帧把整除余数全倒出去,
+    // 保证整步总位移精确等于 dx,dy(不会因损失把小步吃掉)。
     // ============================================================
     {
         constexpr uint32_t USAGE_X     = 0x00010030;
@@ -1498,9 +1502,9 @@ void process_mapping(bool auto_repeat) {
         static uint16_t cur_len = 0;
         static uint16_t idx = 0;
         static uint8_t  step_remain = 0;
-        static int8_t  cur_dx_step = 0;
-        static int8_t  cur_dy_step = 0;
-        static uint8_t cur_dur     = 0;
+        // 当前步还没发射出去的 milli-units
+        static int32_t step_x_milli = 0;
+        static int32_t step_y_milli = 0;
 
         // —— 已发射的反向累计(milli-units),用于松开后回退 ——
         static int32_t backx_milli = 0;
@@ -1543,7 +1547,6 @@ void process_mapping(bool auto_repeat) {
                 returning = true;
                 ret_frames_left = RETURN_TOTAL_FRAMES;
             } else {
-                // 没反向距离就不走 returning,但仍要清掉因整数除法损失留下的残余
                 clear_subpixel_residue();
             }
         };
@@ -1563,7 +1566,7 @@ void process_mapping(bool auto_repeat) {
             if (playing) {
                 playing = false;
                 step_remain = 0;
-                cur_dx_step = cur_dy_step = 0;
+                step_x_milli = step_y_milli = 0;
                 start_return();
             }
         }
@@ -1574,8 +1577,7 @@ void process_mapping(bool auto_repeat) {
             cur_len = armed_galil ? recoil::GALIL_LEN : recoil::TRACK_LEN;
             idx = 0;
             step_remain = 0;
-            cur_dx_step = cur_dy_step = 0;
-            cur_dur = 0;
+            step_x_milli = step_y_milli = 0;
             backx_milli = 0;
             backy_milli = 0;
             playing = true;
@@ -1585,35 +1587,42 @@ void process_mapping(bool auto_repeat) {
         if (playing && !btn_l) {
             playing = false;
             step_remain = 0;
-            cur_dx_step = cur_dy_step = 0;
+            step_x_milli = step_y_milli = 0;
             start_return();
         }
 
-        // —— 推进回放(每帧分摊式)——
+        // —— 推进回放 ——
         if (playing) {
+            // 一步播完了,加载下一步
             if (step_remain == 0) {
                 if (idx < cur_len) {
-                    cur_dx_step = cur[idx].dx;
-                    cur_dy_step = cur[idx].dy;
-                    cur_dur     = cur[idx].delay_ms;
-                    if (cur_dur == 0) cur_dur = 1;
-                    step_remain = cur_dur;
-                    backx_milli -= (int32_t)cur_dx_step * 1000;
-                    backy_milli -= (int32_t)cur_dy_step * 1000;
+                    int8_t  dx  = cur[idx].dx;
+                    int8_t  dy  = cur[idx].dy;
+                    uint8_t dur = cur[idx].delay_ms;
+                    if (dur == 0) dur = 1;
+                    step_remain = dur;
+                    // 整步 milli 总量,后续每帧从这里取出 1/剩余帧数
+                    step_x_milli = (int32_t)dx * 1000;
+                    step_y_milli = (int32_t)dy * 1000;
+                    // 反向距离按整步累计
+                    backx_milli -= step_x_milli;
+                    backy_milli -= step_y_milli;
                     idx++;
                 } else {
                     playing = false;
-                    cur_dx_step = cur_dy_step = 0;
+                    step_x_milli = step_y_milli = 0;
                     start_return();
                 }
             }
+            // 这一帧:发射 step_x_milli / step_remain
+            // 最后一帧 step_remain==1,把所有残余 milli 一次倒出,整步总和精确
             if (step_remain > 0) {
-                if (cur_dx_step != 0 && has_x) {
-                    accumulated[USAGE_X] += (int32_t)cur_dx_step * 1000 / cur_dur;
-                }
-                if (cur_dy_step != 0 && has_y) {
-                    accumulated[USAGE_Y] += (int32_t)cur_dy_step * 1000 / cur_dur;
-                }
+                int32_t emit_x = step_x_milli / (int32_t)step_remain;
+                int32_t emit_y = step_y_milli / (int32_t)step_remain;
+                if (emit_x != 0 && has_x) accumulated[USAGE_X] += emit_x;
+                if (emit_y != 0 && has_y) accumulated[USAGE_Y] += emit_y;
+                step_x_milli -= emit_x;
+                step_y_milli -= emit_y;
                 step_remain--;
             }
         }
@@ -1629,15 +1638,12 @@ void process_mapping(bool auto_repeat) {
                 backy_milli -= step_y;
                 ret_frames_left--;
             } else {
-                // 最后一帧:把残余的 milli-units 全部发出去
                 if (backx_milli != 0 && has_x) accumulated[USAGE_X] += backx_milli;
                 if (backy_milli != 0 && has_y) accumulated[USAGE_Y] += backy_milli;
                 backx_milli = 0;
                 backy_milli = 0;
                 ret_frames_left = 0;
                 returning = false;
-                // 抹掉因整数除法/分摊累计造成的 <1 像素 残余,
-                // 否则下次用户小幅移动的第一下会被吃掉,出现顿挫感
                 clear_subpixel_residue();
             }
         }
@@ -1647,6 +1653,7 @@ void process_mapping(bool auto_repeat) {
         prev_4 = btn_4;
         prev_5 = btn_5;
     }
+
     // execute queued macros
     if (!macro_queue.empty()) {
         for (uint32_t usage : macro_queue.front().items) {
