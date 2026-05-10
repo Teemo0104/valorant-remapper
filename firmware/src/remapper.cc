@@ -1319,7 +1319,36 @@ void process_mapping(bool auto_repeat) {
             }
         }
     }
+    // ============== 自定义功能：左键按住时光标自动慢速向下移动 3 秒 ==============
+    {
+        const uint32_t LEFT_BUTTON_USAGE = 0x00090001;     // Mouse Button 1 (left)
+        const uint32_t MOUSE_Y_USAGE = 0x00010031;          // Generic Desktop / Y
+        const uint64_t AUTO_DOWN_DURATION_FRAMES = 3000;    // ~3 秒（1 frame ≈ 1ms）
+        const int32_t ACCUM_PER_FRAME = 50;                  // 50/1000 = 0.05 px/frame ≈ 50 px/s
 
+        static int32_t* left_button_state_ptr = nullptr;
+        static uint64_t left_button_pressed_at_frame = 0;   // 0 表示未按下
+
+        // 懒加载左键状态指针（启动后稳定）
+        if (left_button_state_ptr == nullptr) {
+            left_button_state_ptr = get_state_ptr(LEFT_BUTTON_USAGE, 0);
+        }
+
+        if (left_button_state_ptr != nullptr) {
+            bool left_pressed = (*left_button_state_ptr != 0);
+            if (left_pressed) {
+                if (left_button_pressed_at_frame == 0) {
+                    left_button_pressed_at_frame = frame_counter;
+                }
+                if (frame_counter - left_button_pressed_at_frame < AUTO_DOWN_DURATION_FRAMES) {
+                    accumulated[MOUSE_Y_USAGE] += ACCUM_PER_FRAME;
+                }
+            } else {
+                left_button_pressed_at_frame = 0;
+            }
+        }
+    }
+    // ============== 自定义功能结束 ==============
     // execute queued macros
     if (!macro_queue.empty()) {
         for (uint32_t usage : macro_queue.front().items) {
