@@ -2192,6 +2192,10 @@ void process_mapping(bool auto_repeat) {
                 last_jump_usage = jump_usage;
             }
 
+            // 左键状态指针（独立于 recoil 块，作用域不同，需单独查）
+            static int32_t* p_btn_l_spc = nullptr;
+            if (!p_btn_l_spc) p_btn_l_spc = get_state_ptr(0x00090001, 0, true);
+
             static bool     prev_jump_trig      = false;
             static uint16_t spc_space_remaining = 0; // Space 还需注入的帧数
             static int32_t  lup_countdown       = -1; // 松左键倒计时，-1=未启动
@@ -2215,7 +2219,7 @@ void process_mapping(bool auto_repeat) {
                 } else if (lup_countdown == 0) {
                     // 强制松开左键：把 input_state 里的左键状态清零一帧
                     // mapping 引擎会因此在输出报文中不写入左键
-                    if (p_btn_l) *p_btn_l = 0;
+                    if (p_btn_l_spc) *p_btn_l_spc = 0;
                     lup_countdown = -1;
                 }
             } else {
