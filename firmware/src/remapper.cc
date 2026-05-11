@@ -1991,49 +1991,57 @@ void process_mapping(bool auto_repeat) {
         prev_5 = btn_5;
     }
     // ============================================================
-    // 反向键自动补点（Null Cancel / Counter-Strafe）
+    // 反向键自动补点（Null Cancel / Counter-Strafe）扩展版
     //
-    // 控制：
-    //   松开 D（A 未按住） → 自动按 A 持续 50ms 再抬起
-    //   松开 A（D 未按住） → 自动按 D 持续 50ms 再抬起
+    // 支持方向：A/D、W/S、WA、WD、SA、SD 六组
+    // Space 跳跃：左键按下触发，延迟后按 Space，持续 20ms 后松开
     //
-    // 守卫：
-    //   - 同时按住 A+D 时再松开任意一个，不触发（避免干扰反向已按情况）
-    //   - 注入期间用户自己按下被注入键，自动让步，不重复写槽位
+    // 控制寄存器（Register 2~8）由网页写入，编码：
+    //   0        = 禁用
+    //   10000+N  = 启用，注入持续 N ms（N=0 时用默认 50ms）
     //
-    // 用途：CS/Valorant 反向急停消惯性
+    //   Register 2 → A/D 急停
+    //   Register 3 → W/S 急停
+    //   Register 4 → WA 对角急停（松开 A 且 W 仍按住 → 注入 D；松开 W 且 A 仍按住 → 注入 S）
+    //   Register 5 → WD 对角急停
+    //   Register 6 → SA 对角急停
+    //   Register 7 → SD 对角急停
+    //   Register 8 → Space 跳跃（松开左键后延迟 N ms 按 Space 持续 20ms）
+    //
+    // 守卫：注入期间用户自己按下被注入键自动让步
     // ============================================================
     {
-        constexpr uint32_t USAGE_KEY_A         = 0x00070004;
-        constexpr uint32_t USAGE_KEY_D         = 0x00070007;
-        constexpr uint16_t INJECT_DURATION_MS  = 50;
+        // —— HID Usage 常量 ——
+        constexpr uint32_t USAGE_KEY_A     = 0x00070004;
+        constexpr uint32_t USAGE_KEY_D     = 0x00070007;
+        constexpr uint32_t USAGE_KEY_W     = 0x0007001A;
+        constexpr uint32_t USAGE_KEY_S     = 0x00070016;
+        constexpr uint32_t USAGE_KEY_SPACE = 0x0007002C;
 
-        // —— 状态槽指针（首帧分配，之后缓存）——
-        static int32_t* p_key_a = nullptr;
-        static int32_t* p_key_d = nullptr;
-        if (p_key_a == nullptr) p_key_a = get_state_ptr(USAGE_KEY_A, 0, true);
-        if (p_key_d == nullptr) p_key_d = get_state_ptr(USAGE_KEY_D, 0, true);
+        // —— 读取 Register N (0xFFF50000 | N) ——
+        // 返回寄存器原始值；通过 reverse_mapping 直接读 scaling（不走 register 引擎）
+        auto read_reg = [&](uint32_t reg_usage) -> int32_t {
+            for (auto const& rev_map : reverse_mapping) {
+                if (rev_map.target == reg_usage && !rev_map.sources.empty()) {
+                    return rev_map.sources[0].scaling;
+                }
+            }
+            return 0;
+        };
 
-        // —— 上一帧状态 & 剩余注入时间 ——
-        static bool     prev_a = false;
-        static bool     prev_d = false;
-        static uint16_t inject_a_remaining = 0;
-        static uint16_t inject_d_remaining = 0;
-
-        bool a_held = p_key_a && (*p_key_a != 0);
-        bool d_held = p_key_d && (*p_key_d != 0);
-
-        // —— 边沿检测：D 松开 → 注入 A ——
-        if (prev_d && !d_held && !a_held) {
-            inject_a_remaining = INJECT_DURATION_MS;
-        }
-        // —— 边沿检测：A 松开 → 注入 D ——
-        if (prev_a && !a_held && !d_held) {
-            inject_d_remaining = INJECT_DURATION_MS;
-        }
+        // —— 解析寄存器编码：0=禁用；>=10000 → 启用，延迟 = val-10000（0则默认50ms）——
+        auto parse_reg = [](int32_t val, bool& enabled, uint16_t& delay_ms) {
+            if (val >= 10000) {
+                enabled  = true;
+                int32_t d = val - 10000;
+                delay_ms = (d <= 0 || d > 9999) ? 50 : (uint16_t)d;
+            } else {
+                enabled  = false;
+                delay_ms = 50;
+            }
+        };
 
         // —— 工具：把一个 keyboard usage 写进输出报文 ——
-        //   优先走 array（boot keyboard / 6KRO 的槽位式），降级走 bitfield (NKRO)
         auto inject_key = [&](uint32_t usage) {
             for (auto const& array_usage : our_array_range_usages) {
                 if ((usage >= array_usage.usage) &&
@@ -2052,30 +2060,170 @@ void process_mapping(bool auto_repeat) {
                             return;
                         }
                     }
-                    return;  // 槽位满
+                    return;
                 }
             }
-            // bitfield NKRO 路径
             auto it = our_usages_flat.find(usage);
             if (it != our_usages_flat.end()) {
                 const usage_def_t& u = it->second;
-                put_bits(reports[u.report_id], report_sizes[u.report_id],
-                         u.bitpos, u.size, 1);
+                put_bits(reports[u.report_id], report_sizes[u.report_id], u.bitpos, u.size, 1);
             }
         };
 
-        // —— 执行注入 + 倒计时 ——
-        if (inject_a_remaining > 0) {
-            if (!a_held) inject_key(USAGE_KEY_A);
-            inject_a_remaining--;
-        }
-        if (inject_d_remaining > 0) {
-            if (!d_held) inject_key(USAGE_KEY_D);
-            inject_d_remaining--;
+        // —— 状态槽指针（首帧分配）——
+        static int32_t* p_key_a = nullptr;
+        static int32_t* p_key_d = nullptr;
+        static int32_t* p_key_w = nullptr;
+        static int32_t* p_key_s = nullptr;
+        if (!p_key_a) p_key_a = get_state_ptr(USAGE_KEY_A,     0, true);
+        if (!p_key_d) p_key_d = get_state_ptr(USAGE_KEY_D,     0, true);
+        if (!p_key_w) p_key_w = get_state_ptr(USAGE_KEY_W,     0, true);
+        if (!p_key_s) p_key_s = get_state_ptr(USAGE_KEY_S,     0, true);
+
+        bool a_held = p_key_a && (*p_key_a != 0);
+        bool d_held = p_key_d && (*p_key_d != 0);
+        bool w_held = p_key_w && (*p_key_w != 0);
+        bool s_held = p_key_s && (*p_key_s != 0);
+
+        // —— 上一帧状态 ——
+        static bool prev_a = false, prev_d = false;
+        static bool prev_w = false, prev_s = false;
+
+        // —— 注入计时器（每项对应一个待注入键）——
+        static uint16_t inj_A = 0, inj_D = 0;   // A/D 急停注入
+        static uint16_t inj_Ws = 0, inj_Ss = 0; // W/S 急停注入（Ws=注入S，Ss=注入W）
+        static uint16_t inj_WA_D = 0, inj_WA_S = 0; // WA对角
+        static uint16_t inj_WD_A = 0, inj_WD_S = 0; // WD对角
+        static uint16_t inj_SA_D = 0, inj_SA_W = 0; // SA对角
+        static uint16_t inj_SD_A = 0, inj_SD_W = 0; // SD对角
+
+        // —— 读取各方向配置 ——
+        bool    en_ad, en_ws, en_wa, en_wd, en_sa, en_sd;
+        uint16_t dl_ad, dl_ws, dl_wa, dl_wd, dl_sa, dl_sd;
+        parse_reg(read_reg(0xFFF50002), en_ad, dl_ad);
+        parse_reg(read_reg(0xFFF50003), en_ws, dl_ws);
+        parse_reg(read_reg(0xFFF50004), en_wa, dl_wa);
+        parse_reg(read_reg(0xFFF50005), en_wd, dl_wd);
+        parse_reg(read_reg(0xFFF50006), en_sa, dl_sa);
+        parse_reg(read_reg(0xFFF50007), en_sd, dl_sd);
+
+        // ── A/D 急停 ──────────────────────────────────────────
+        if (en_ad) {
+            if (prev_d && !d_held && !a_held) inj_A = dl_ad;
+            if (prev_a && !a_held && !d_held) inj_D = dl_ad;
         }
 
-        prev_a = a_held;
-        prev_d = d_held;
+        // ── W/S 急停 ──────────────────────────────────────────
+        if (en_ws) {
+            if (prev_w && !w_held && !s_held) inj_Ws = dl_ws; // 松W → 注S
+            if (prev_s && !s_held && !w_held) inj_Ss = dl_ws; // 松S → 注W
+        }
+
+        // ── WA 对角急停 ───────────────────────────────────────
+        // 松开 A（W 仍按住） → 注入 D（水平反向）
+        // 松开 W（A 仍按住） → 注入 S（垂直反向）
+        if (en_wa) {
+            if (prev_a && !a_held && w_held)  inj_WA_D = dl_wa;
+            if (prev_w && !w_held && a_held)  inj_WA_S = dl_wa;
+        }
+
+        // ── WD 对角急停 ───────────────────────────────────────
+        if (en_wd) {
+            if (prev_d && !d_held && w_held)  inj_WD_A = dl_wd;
+            if (prev_w && !w_held && d_held)  inj_WD_S = dl_wd;
+        }
+
+        // ── SA 对角急停 ───────────────────────────────────────
+        if (en_sa) {
+            if (prev_a && !a_held && s_held)  inj_SA_D = dl_sa;
+            if (prev_s && !s_held && a_held)  inj_SA_W = dl_sa;
+        }
+
+        // ── SD 对角急停 ───────────────────────────────────────
+        if (en_sd) {
+            if (prev_d && !d_held && s_held)  inj_SD_A = dl_sd;
+            if (prev_s && !s_held && d_held)  inj_SD_W = dl_sd;
+        }
+
+        // —— 执行注入 + 倒计时 ——
+        if (inj_A   > 0) { if (!a_held) inject_key(USAGE_KEY_A); inj_A--;   }
+        if (inj_D   > 0) { if (!d_held) inject_key(USAGE_KEY_D); inj_D--;   }
+        if (inj_Ws  > 0) { if (!s_held) inject_key(USAGE_KEY_S); inj_Ws--;  }
+        if (inj_Ss  > 0) { if (!w_held) inject_key(USAGE_KEY_W); inj_Ss--;  }
+        if (inj_WA_D > 0) { if (!d_held) inject_key(USAGE_KEY_D); inj_WA_D--; }
+        if (inj_WA_S > 0) { if (!s_held) inject_key(USAGE_KEY_S); inj_WA_S--; }
+        if (inj_WD_A > 0) { if (!a_held) inject_key(USAGE_KEY_A); inj_WD_A--; }
+        if (inj_WD_S > 0) { if (!s_held) inject_key(USAGE_KEY_S); inj_WD_S--; }
+        if (inj_SA_D > 0) { if (!d_held) inject_key(USAGE_KEY_D); inj_SA_D--; }
+        if (inj_SA_W > 0) { if (!w_held) inject_key(USAGE_KEY_W); inj_SA_W--; }
+        if (inj_SD_A > 0) { if (!a_held) inject_key(USAGE_KEY_A); inj_SD_A--; }
+        if (inj_SD_W > 0) { if (!w_held) inject_key(USAGE_KEY_W); inj_SD_W--; }
+
+        prev_a = a_held; prev_d = d_held;
+        prev_w = w_held; prev_s = s_held;
+
+        // ── 跳跃松左键：自定义按键按下 → 立即按 Space 持续 20ms，同时倒计时 N ms 后松开左键一帧 ──
+        //
+        // 时序（Register 8 启用时）：
+        //   触发键按下边沿
+        //     └─ 立即注入 Space，连续输出 20 帧（20ms）
+        //     └─ 启动倒计时 dl ms
+        //   倒计时归零
+        //     └─ 当帧强制把 *p_btn_l 清零（mapping 引擎读到 0，左键该帧不输出）
+        //
+        // Register 8：0=禁用；10000+N=启用，N ms 后松开左键
+        // Register 9：触发键 HID Usage（32位，默认 0x00090005 = B5）
+        //   网页可写入任意 HID Usage，固件每帧动态读取
+        {
+            bool     en_spc;
+            uint16_t dl_spc;
+            parse_reg(read_reg(0xFFF50008), en_spc, dl_spc);
+
+            // 触发键 Usage 来自 Register 9；默认 B5（0x00090005）
+            // Register 9 直接存 Usage 原始值（不走 10000 编码，就是整数）
+            int32_t reg9_raw = read_reg(0xFFF50009);
+            uint32_t jump_usage = (reg9_raw > 0) ? (uint32_t)reg9_raw : 0x00090005u;
+
+            // 动态查找触发键状态指针（Usage 变化时重新查）
+            static uint32_t  last_jump_usage  = 0;
+            static int32_t*  p_jump_trigger   = nullptr;
+            if (jump_usage != last_jump_usage) {
+                p_jump_trigger  = get_state_ptr(jump_usage, 0, true);
+                last_jump_usage = jump_usage;
+            }
+
+            static bool     prev_jump_trig      = false;
+            static uint16_t spc_space_remaining = 0; // Space 还需注入的帧数
+            static int32_t  lup_countdown       = -1; // 松左键倒计时，-1=未启动
+
+            bool jump_trig = p_jump_trigger && (*p_jump_trigger != 0);
+
+            if (en_spc) {
+                bool trig_edge = jump_trig && !prev_jump_trig; // 按下边沿
+                if (trig_edge && spc_space_remaining == 0 && lup_countdown < 0) {
+                    spc_space_remaining = 20;               // Space 按住 20ms
+                    lup_countdown       = (int32_t)dl_spc;  // 同时启动松左键倒计时
+                }
+                // 注入 Space
+                if (spc_space_remaining > 0) {
+                    inject_key(USAGE_KEY_SPACE);
+                    spc_space_remaining--;
+                }
+                // 松左键倒计时
+                if (lup_countdown > 0) {
+                    lup_countdown--;
+                } else if (lup_countdown == 0) {
+                    // 强制松开左键：把 input_state 里的左键状态清零一帧
+                    // mapping 引擎会因此在输出报文中不写入左键
+                    if (p_btn_l) *p_btn_l = 0;
+                    lup_countdown = -1;
+                }
+            } else {
+                spc_space_remaining = 0;
+                lup_countdown       = -1;
+            }
+            prev_jump_trig = jump_trig;
+        }
     }
     // execute queued macros
     if (!macro_queue.empty()) {
