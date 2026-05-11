@@ -58,6 +58,8 @@ bool set_gpio_dir_pending = false;
 uint16_t prev_adc_state[NADCS] = { 0 };
 #endif
 
+
+}
 void print_stats_maybe() {
     uint64_t now = time_us_64();
     if (now > next_print) {
@@ -154,7 +156,12 @@ void write_gpio() {
     if (suspended) {
         return;
     }
-
+void __no_inline_not_in_flash_func(do_persist_config)(uint8_t* buffer) {
+    uint32_t ints = save_and_disable_interrupts();
+    flash_range_erase  (CONFIG_OFFSET_IN_FLASH, PERSISTED_CONFIG_SIZE);
+    flash_range_program(CONFIG_OFFSET_IN_FLASH, buffer, PERSISTED_CONFIG_SIZE);
+    restore_interrupts(ints);
+    
     uint32_t value = gpio_out_state[0] | (gpio_out_state[1] << 8) | (gpio_out_state[2] << 16) | (gpio_out_state[3] << 24);
     switch (gpio_output_mode) {
         case 0:
