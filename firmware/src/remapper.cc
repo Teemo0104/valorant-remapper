@@ -1776,15 +1776,13 @@ void process_mapping(bool auto_repeat) {
         static int32_t* p_btn_l = nullptr;
         static int32_t* p_btn_m = nullptr;
         static int32_t* p_btn_4 = nullptr;
-        static int32_t* p_btn_5 = nullptr;
-        static int32_t* p_scale = nullptr; 
+        static int32_t* p_btn_5 = nullptr; 
         static bool slots_inited = false;
         if (!slots_inited) {
             p_btn_l = get_state_ptr(USAGE_BTN_L, 0, true);
             p_btn_m = get_state_ptr(USAGE_BTN_M, 0, true);
             p_btn_4 = get_state_ptr(USAGE_BTN_4, 0, true);
-            p_btn_5 = get_state_ptr(USAGE_BTN_5, 0, true);
-            p_scale = &registers[0]; 
+            p_btn_5 = get_state_ptr(USAGE_BTN_5, 0, true); 
             slots_inited = true;
         }
 
@@ -1894,10 +1892,19 @@ void process_mapping(bool auto_repeat) {
 
         // —— 触发回放 ——
         if (edge_l && armed != ARMED_NONE && !playing && !returning) {
-            int32_t s = (p_scale != nullptr) ? *p_scale : 0;
-            if (s <= 0) s = 1000;          // 默认 1.0x
-            if (s < 100)  s = 100;          // 限制最小 0.1x
-            if (s > 5000) s = 5000;         // 限制最大 5.0x
+            // 锁定本次发射倍率：扫描 reverse_mapping，找 target=Register 1 (0xFFF50001)
+            // 的那条 mapping，直接取其 sources[0].scaling 作为倍率值。
+            // 绕开 mapping → register 路径的整数除法陷阱（candidate/=1000 会把小数倍丢掉）
+            int32_t s = 1000;  // 默认 1.0x
+            for (auto const& rev_map : reverse_mapping) {
+                if (rev_map.target == 0xFFF50001 && !rev_map.sources.empty()) {
+                    s = rev_map.sources[0].scaling;
+                    break;
+                }
+            }
+            if (s <= 0)   s = 1000;
+            if (s < 100)  s = 100;
+            if (s > 5000) s = 5000;
             scale_cur = s;
             switch (armed) {
                 case ARMED_AK47:
