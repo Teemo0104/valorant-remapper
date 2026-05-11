@@ -1654,12 +1654,12 @@ void process_mapping(bool auto_repeat) {
         // —— B5 边沿：单击 → AK47，双击 → M4A4 ——
         if (edge_5) {
             if (last_b5_edge_valid &&
-                (now - last_b5_edge_frame) < DOUBLE_CLICK_WINDOW) {
+                (frame_counter - last_b5_edge_frame) < DOUBLE_CLICK_WINDOW) {
                 armed = ARMED_M4A4;
                 last_b5_edge_valid = false;   // 双击触发后清除，避免三连击意外升级
             } else {
                 armed = ARMED_AK47;
-                last_b5_edge_frame = now;
+                last_b5_edge_frame = frame_counter;
                 last_b5_edge_valid = true;
             }
         }
@@ -1667,12 +1667,12 @@ void process_mapping(bool auto_repeat) {
         // —— 中键边沿：单击 Galil，双击 FAMAS（覆盖 B5 选择）——
         if (edge_m) {
             if (last_m_edge_valid &&
-                (now - last_m_edge_frame) < DOUBLE_CLICK_WINDOW) {
+                (frame_counter - last_m_edge_frame) < DOUBLE_CLICK_WINDOW) {
                 armed = ARMED_FAMAS;
                 last_m_edge_valid = false;
             } else {
                 armed = ARMED_GALIL;
-                last_m_edge_frame = now;
+                last_m_edge_frame = frame_counter;
                 last_m_edge_valid = true;
             }
             last_b5_edge_valid = false;
