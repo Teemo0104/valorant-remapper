@@ -1990,7 +1990,93 @@ void process_mapping(bool auto_repeat) {
         prev_4 = btn_4;
         prev_5 = btn_5;
     }
+    // ============================================================
+    // 反向键自动补点（Null Cancel / Counter-Strafe）
+    //
+    // 控制：
+    //   松开 D（A 未按住） → 自动按 A 持续 50ms 再抬起
+    //   松开 A（D 未按住） → 自动按 D 持续 50ms 再抬起
+    //
+    // 守卫：
+    //   - 同时按住 A+D 时再松开任意一个，不触发（避免干扰反向已按情况）
+    //   - 注入期间用户自己按下被注入键，自动让步，不重复写槽位
+    //
+    // 用途：CS/Valorant 反向急停消惯性
+    // ============================================================
+    {
+        constexpr uint32_t USAGE_KEY_A         = 0x00070004;
+        constexpr uint32_t USAGE_KEY_D         = 0x00070007;
+        constexpr uint16_t INJECT_DURATION_MS  = 50;
 
+        // —— 状态槽指针（首帧分配，之后缓存）——
+        static int32_t* p_key_a = nullptr;
+        static int32_t* p_key_d = nullptr;
+        if (p_key_a == nullptr) p_key_a = get_state_ptr(USAGE_KEY_A, 0, true);
+        if (p_key_d == nullptr) p_key_d = get_state_ptr(USAGE_KEY_D, 0, true);
+
+        // —— 上一帧状态 & 剩余注入时间 ——
+        static bool     prev_a = false;
+        static bool     prev_d = false;
+        static uint16_t inject_a_remaining = 0;
+        static uint16_t inject_d_remaining = 0;
+
+        bool a_held = p_key_a && (*p_key_a != 0);
+        bool d_held = p_key_d && (*p_key_d != 0);
+
+        // —— 边沿检测：D 松开 → 注入 A ——
+        if (prev_d && !d_held && !a_held) {
+            inject_a_remaining = INJECT_DURATION_MS;
+        }
+        // —— 边沿检测：A 松开 → 注入 D ——
+        if (prev_a && !a_held && !d_held) {
+            inject_d_remaining = INJECT_DURATION_MS;
+        }
+
+        // —— 工具：把一个 keyboard usage 写进输出报文 ——
+        //   优先走 array（boot keyboard / 6KRO 的槽位式），降级走 bitfield (NKRO)
+        auto inject_key = [&](uint32_t usage) {
+            for (auto const& array_usage : our_array_range_usages) {
+                if ((usage >= array_usage.usage) &&
+                    (usage <= array_usage.usage_def.usage_maximum)) {
+                    const uint8_t  rid = array_usage.usage_def.report_id;
+                    const uint16_t bp0 = array_usage.usage_def.bitpos;
+                    const uint8_t  sz  = array_usage.usage_def.size;
+                    for (unsigned int i = 0; i < array_usage.usage_def.count; i++) {
+                        int32_t existing = get_bits(reports[rid], report_sizes[rid],
+                                                    bp0 + i * sz, sz);
+                        if (existing == 0) {
+                            put_bits(reports[rid], report_sizes[rid],
+                                     bp0 + i * sz, sz,
+                                     array_usage.usage_def.logical_minimum
+                                         + usage - array_usage.usage);
+                            return;
+                        }
+                    }
+                    return;  // 槽位满
+                }
+            }
+            // bitfield NKRO 路径
+            auto it = our_usages_flat.find(usage);
+            if (it != our_usages_flat.end()) {
+                const usage_def_t& u = it->second;
+                put_bits(reports[u.report_id], report_sizes[u.report_id],
+                         u.bitpos, u.size, 1);
+            }
+        };
+
+        // —— 执行注入 + 倒计时 ——
+        if (inject_a_remaining > 0) {
+            if (!a_held) inject_key(USAGE_KEY_A);
+            inject_a_remaining--;
+        }
+        if (inject_d_remaining > 0) {
+            if (!d_held) inject_key(USAGE_KEY_D);
+            inject_d_remaining--;
+        }
+
+        prev_a = a_held;
+        prev_d = d_held;
+    }
     // execute queued macros
     if (!macro_queue.empty()) {
         for (uint32_t usage : macro_queue.front().items) {
