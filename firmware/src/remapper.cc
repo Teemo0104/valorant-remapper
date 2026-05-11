@@ -1579,12 +1579,14 @@ void process_mapping(bool auto_repeat) {
         static int32_t* p_btn_m = nullptr;
         static int32_t* p_btn_4 = nullptr;
         static int32_t* p_btn_5 = nullptr;
+        static int32_t* p_scale = nullptr; 
         static bool slots_inited = false;
         if (!slots_inited) {
             p_btn_l = get_state_ptr(USAGE_BTN_L, 0, true);
             p_btn_m = get_state_ptr(USAGE_BTN_M, 0, true);
             p_btn_4 = get_state_ptr(USAGE_BTN_4, 0, true);
             p_btn_5 = get_state_ptr(USAGE_BTN_5, 0, true);
+            p_scale = &registers[0]; 
             slots_inited = true;
         }
 
@@ -1600,7 +1602,8 @@ void process_mapping(bool auto_repeat) {
         static uint8_t step_remain = 0;
         static int32_t step_x_milli = 0;
         static int32_t step_y_milli = 0;
-
+        // —— 本次发射锁定的倍率（×1000，1000=1.0x）——
+        static int32_t scale_cur = 1000;
         // —— 已发射的反向累计（milli-units），用于松开后回退 ——
         static int32_t backx_milli = 0;
         static int32_t backy_milli = 0;
@@ -1693,6 +1696,11 @@ void process_mapping(bool auto_repeat) {
 
         // —— 触发回放 ——
         if (edge_l && armed != ARMED_NONE && !playing && !returning) {
+            int32_t s = (p_scale != nullptr) ? *p_scale : 0;
+            if (s <= 0) s = 1000;          // 默认 1.0x
+            if (s < 100)  s = 100;          // 限制最小 0.1x
+            if (s > 5000) s = 5000;         // 限制最大 5.0x
+            scale_cur = s;
             switch (armed) {
                 case ARMED_AK47:
                     cur = recoil::AK47;       cur_len = recoil::AK47_LEN;  break;
@@ -1729,8 +1737,8 @@ void process_mapping(bool auto_repeat) {
                     uint8_t dur = cur[idx].delay_ms;
                     if (dur == 0) dur = 1;
                     step_remain = dur;
-                    step_x_milli = (int32_t)dx * 1000;
-                    step_y_milli = (int32_t)dy * 1000;
+                    step_x_milli = (int32_t)dx * scale_cur;
+                    step_y_milli = (int32_t)dy * scale_cur;
                     backx_milli -= step_x_milli;
                     backy_milli -= step_y_milli;
                     idx++;
