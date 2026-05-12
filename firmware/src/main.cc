@@ -193,6 +193,12 @@ void do_persist_config(uint8_t* buffer) {
     uint32_t ints = save_and_disable_interrupts();
 #endif
     flash_range_erase(CONFIG_OFFSET_IN_FLASH, PERSISTED_CONFIG_SIZE);
+
+    // 在 erase 和 program 的间隙处理积压的 USB 事件，防止 Windows 超时断开
+    for (int i = 0; i < 5; i++) {
+        tud_task();
+    }
+
     flash_range_program(CONFIG_OFFSET_IN_FLASH, buffer, PERSISTED_CONFIG_SIZE);
 #if !PICO_COPY_TO_RAM
     restore_interrupts(ints);

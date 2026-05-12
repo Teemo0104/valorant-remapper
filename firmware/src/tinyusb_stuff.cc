@@ -52,7 +52,7 @@ tusb_desc_device_t desc_device = {
 
     .iManufacturer = 0x01,
     .iProduct = 0x02,
-    .iSerialNumber = 0x00,
+    .iSerialNumber = 0x03,
 
     .bNumConfigurations = 0x01,
 };
@@ -104,8 +104,13 @@ const uint8_t* configuration_descriptors[] = {
 
 char const* string_desc_arr[] = {
     (const char[]){ 0x09, 0x04 },  // 0: is supported language is English (0x0409)
-    "Logitech",  // 1: Manufacturer
-    "PRO X SUPERLIGHT 2",  // 2: Product
+#ifdef PICO_RP2350
+    "RP2350",  // 1: Manufacturer
+#else
+    "RP2040",  // 1: Manufacturer
+#endif
+    "HID Remapper XXXX",  // 2: Product
+    "123456789012",       // 3: Serial Number
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
@@ -169,12 +174,19 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             _desc_str[1 + i] = str[i];
         }
 
-        // if (index == 2) {
-        //     uint64_t unique_id = get_unique_id();
-        //     for (uint8_t i = 0; i < 4; i++) {
-        //         _desc_str[1 + chr_count - 4 + i] = id_chars[(unique_id >> (15 - i * 5)) & 0x1F];
-        //     }
-        // }
+        if (index == 2) {
+            uint64_t unique_id = get_unique_id();
+            for (uint8_t i = 0; i < 4; i++) {
+                _desc_str[1 + chr_count - 4 + i] = id_chars[(unique_id >> (15 - i * 5)) & 0x1F];
+            }
+        }
+
+        if (index == 3) {
+            uint64_t unique_id = get_unique_id();
+            for (uint8_t i = 0; i < 12; i++) {
+                _desc_str[1 + i] = id_chars[(unique_id >> (55 - i * 5)) & 0x1F];
+            }
+        }
     }
 
     // first byte is length (including header), second byte is string type
