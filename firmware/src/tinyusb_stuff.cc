@@ -34,8 +34,8 @@
 
 // These IDs are bogus. If you want to distribute any hardware using this,
 // you will have to get real ones.
-#define USB_VID 0xCAFE
-#define USB_PID 0xBAF2
+#define USB_VID 0x046D
+#define USB_PID 0xC54D
 
 tusb_desc_device_t desc_device = {
     .bLength = sizeof(tusb_desc_device_t),
@@ -104,12 +104,8 @@ const uint8_t* configuration_descriptors[] = {
 
 char const* string_desc_arr[] = {
     (const char[]){ 0x09, 0x04 },  // 0: is supported language is English (0x0409)
-#ifdef PICO_RP2350
-    "RP2350",  // 1: Manufacturer
-#else
-    "RP2040",  // 1: Manufacturer
-#endif
-    "HID Remapper XXXX",  // 2: Product
+    "Logitech",  // 1: Manufacturer
+    "PRO X SUPERLIGHT 2",  // 2: Product
 };
 
 // Invoked when received GET DEVICE DESCRIPTOR
@@ -173,12 +169,12 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
             _desc_str[1 + i] = str[i];
         }
 
-        if (index == 2) {
-            uint64_t unique_id = get_unique_id();
-            for (uint8_t i = 0; i < 4; i++) {
-                _desc_str[1 + chr_count - 4 + i] = id_chars[(unique_id >> (15 - i * 5)) & 0x1F];
-            }
-        }
+        // if (index == 2) {
+        //     uint64_t unique_id = get_unique_id();
+        //     for (uint8_t i = 0; i < 4; i++) {
+        //         _desc_str[1 + chr_count - 4 + i] = id_chars[(unique_id >> (15 - i * 5)) & 0x1F];
+        //     }
+        // }
     }
 
     // first byte is length (including header), second byte is string type
