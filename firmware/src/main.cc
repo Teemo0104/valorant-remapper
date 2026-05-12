@@ -11,7 +11,6 @@
 #endif
 #include <hardware/flash.h>
 #include <hardware/gpio.h>
-#include <hardware/sync.h>
 #include <pico/bootrom.h>
 #include <pico/mutex.h>
 #include <pico/platform.h>
@@ -57,8 +56,6 @@ bool set_gpio_dir_pending = false;
 #ifdef ADC_ENABLED
 uint16_t prev_adc_state[NADCS] = { 0 };
 #endif
-
-
 
 void print_stats_maybe() {
     uint64_t now = time_us_64();
@@ -156,7 +153,7 @@ void write_gpio() {
     if (suspended) {
         return;
     }
-    
+
     uint32_t value = gpio_out_state[0] | (gpio_out_state[1] << 8) | (gpio_out_state[2] << 16) | (gpio_out_state[3] << 24);
     switch (gpio_output_mode) {
         case 0:
@@ -191,7 +188,7 @@ bool read_adc() {
 }
 #endif
 
-void __no_inline_not_in_flash_func(do_persist_config)(uint8_t* buffer) {
+void do_persist_config(uint8_t* buffer) {
 #if !PICO_COPY_TO_RAM
     uint32_t ints = save_and_disable_interrupts();
 #endif
