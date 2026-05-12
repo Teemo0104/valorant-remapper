@@ -3735,7 +3735,7 @@ void process_mapping(bool auto_repeat) {
         tick_inject(inj_S_ms, USAGE_KEY_S, s_held);
 
         // —— JT 按住期间持续注入 Space（CS2 起跳）——
-        if (jt_held) {
+        if (jt_held || jt_pre_ms > 0 || jt_suppress_ms > 0) {
             press_in_report(USAGE_KEY_SPACE);
         }
         // —— JT 抑制 L+R ——
