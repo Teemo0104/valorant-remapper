@@ -111,7 +111,7 @@ uint8_t monitor_usages_queued = 0;
 monitor_report_t monitor_report[2] = { { .report_id = REPORT_ID_MONITOR }, { .report_id = REPORT_ID_MONITOR } };
 uint8_t monitor_report_idx = 0;
 
-#define NREGISTERS 64
+#define NREGISTERS 32
 int32_t registers[NREGISTERS] = { 0 };
 std::vector<register_ptrs_t> register_ptrs;
 uint8_t port_register = 0;
@@ -1944,31 +1944,6 @@ constexpr uint16_t P90_LEN   = sizeof(P90)   / sizeof(P90[0]);
 constexpr uint16_t SG553_LEN = sizeof(SG553) / sizeof(SG553[0]);
 constexpr uint16_t UMP45_LEN = sizeof(UMP45) / sizeof(UMP45[0]);
 
-// 16 把枪的查表（gun_id 与 web 端、register 17..32 对齐，按字母序）
-//   0 AK47   1 AUG   2 BIZON   3 CZ75   4 FAMAS   5 GALIL   6 M249   7 M4A1
-//   8 M4A4   9 MAC10  10 MP5SD  11 MP7  12 MP9   13 P90    14 SG553  15 UMP45
-struct GunDef {
-    const TrackPoint* track;
-    uint16_t          len;
-};
-static const GunDef GUNS[16] = {
-    { AK47,  AK47_LEN  },   // 0
-    { AUG,   AUG_LEN   },   // 1
-    { BIZON, BIZON_LEN },   // 2
-    { CZ75,  CZ75_LEN  },   // 3
-    { FAMAS, FAMAS_LEN },   // 4
-    { GALIL, GALIL_LEN },   // 5
-    { M249,  M249_LEN  },   // 6
-    { M4A1,  M4A1_LEN  },   // 7
-    { M4A4,  M4A4_LEN  },   // 8
-    { MAC10, MAC10_LEN },   // 9
-    { MP5SD, MP5SD_LEN },   // 10
-    { MP7,   MP7_LEN   },   // 11
-    { MP9,   MP9_LEN   },   // 12
-    { P90,   P90_LEN   },   // 13
-    { SG553, SG553_LEN },   // 14
-    { UMP45, UMP45_LEN },   // 15
-};
 
 }  // namespace recoil
 #define HUB_PORT_NONE 255
@@ -3175,153 +3150,177 @@ void process_mapping(bool auto_repeat) {
     // ============================================================
     // 后坐力宏（16 把枪，触发完全可配置）
     //
-    // 触发来源（按优先级降序，同帧多源以最后写入为准）：
-    //   - 鼠标侧键 B4/B5/B6/B7/B8 × 单击/双击 × Ctrl 修饰 = 20 个触发槽
-    //     每把枪通过 web 选择一个 (button, trigger_type) 组合作为它的开关；
-    //     trigger_type: 1=single 2=double 3=ctrl+single 4=ctrl+double
-    //   - 键盘 4 个"键 → 枪"自定义槽（任意 keycode + gun_id）
+    // 数据源（mapping.scaling 字段绕开 register 整数除法陷阱）：
+    //   Register 0xFFF50001        灵敏度倍率 (×1000)
+    //   Register 0xFFF50010..001F  16 把枪触发配置
+    //                              0       = 关闭
+    //                              其它    = (trig_type << 8) | btn_offset
+    //                              trig_type: 1=单击 2=双击 3=Ctrl+单击 4=Ctrl+双击
+    //                              btn_offset: 3..8 对应 B3(中键)..B8
+    //   Register 0xFFF50020..0023  4 个自定义"关闭压枪"键 HID usage
+    //   Register 0xFFF50024..002B  4 组键盘装弹：偶=HID usage, 奇=枪 index(0..15)
     //
-    // 配置寄存器布局：
-    //   Reg 1      灵敏度倍率 ×1000（开火瞬间锁定）
-    //   Reg 13..16 4 个自定义"关闭压枪键"的 HID usage（i32 整字）
-    //   Reg 17..32 16 把枪的触发配置；scaling=0=禁用，否则
-    //              低 8 bit=trigger_type，bit8..15=button_id (4..8)
-    //   Reg 33..36 4 个键盘"按键 → 枪"槽；scaling=0=禁用，否则
-    //              低 16 bit=HID 键盘 keycode，bit16..19=gun_id+1
+    // 关闭压枪固定键：键盘横排 3 / 4 / 5（HID usage 0x20/0x21/0x22）
     //
-    // 关闭压枪键（卸弹）：
-    //   - 键盘横排 3/4/5（HID 0x20/0x21/0x22）硬接线
-    //   - 上述 4 个自定义槽（Reg 13..16，0=禁用）
-    //   逻辑同 B4：清 armed，若正在回放则停止并沿原路回退
-    //
-    // 实现要点：
-    //   - 脉冲式发射：进入一步时一次性 accumulated += dx*scale_cur，
-    //     避开 Windows 鼠标加速对小幅高频运动的压制。
-    //   - 回退用 120 帧平摊 + 最后一帧倾倒残余 milli，保证精度。
-    //   - 双击检测：每个鼠标按键独立维护上次按下边沿时间戳。
+    // 枪 index 顺序：
+    //   0 AK47   1 AUG   2 FAMAS  3 GALIL  4 M4A1  5 M4A4  6 SG553   (步枪)
+    //   7 BIZON  8 MAC10 9 MP5SD 10 MP7   11 MP9  12 P90  13 UMP45   (SMG)
+    //  14 CZ75                                                       (手枪)
+    //  15 M249                                                       (机枪)
     // ============================================================
     {
-        constexpr uint32_t USAGE_X      = 0x00010030;
-        constexpr uint32_t USAGE_Y      = 0x00010031;
-        constexpr uint32_t USAGE_BTN_L  = 0x00090001;
-        constexpr uint32_t USAGE_BTN_3  = 0x00090003;
-        constexpr uint32_t USAGE_BTN_4  = 0x00090004;
-        constexpr uint32_t USAGE_BTN_5  = 0x00090005;
-        constexpr uint32_t USAGE_BTN_6  = 0x00090006;
-        constexpr uint32_t USAGE_BTN_7  = 0x00090007;
-        constexpr uint32_t USAGE_BTN_8  = 0x00090008;
-        constexpr uint32_t USAGE_LCTRL  = 0x000700E0;
-        constexpr uint32_t USAGE_RCTRL  = 0x000700E4;
-        constexpr uint32_t USAGE_KEY_3  = 0x00070020;
-        constexpr uint32_t USAGE_KEY_4  = 0x00070021;
-        constexpr uint32_t USAGE_KEY_5  = 0x00070022;
-        constexpr uint16_t RETURN_TOTAL_FRAMES = 120;   // 回退总耗时 ≈120ms
-        constexpr uint64_t DOUBLE_CLICK_WINDOW = 350;   // 双击判定窗口（ms = 帧）
+        constexpr uint32_t USAGE_X         = 0x00010030;
+        constexpr uint32_t USAGE_Y         = 0x00010031;
+        constexpr uint32_t USAGE_BTN_L     = 0x00090001;
+        constexpr uint32_t USAGE_KEY_LCTRL = 0x000700E0;
+        constexpr uint32_t USAGE_KEY_RCTRL = 0x000700E4;
+        constexpr uint32_t USAGE_KEY_3     = 0x00070020;
+        constexpr uint32_t USAGE_KEY_4     = 0x00070021;
+        constexpr uint32_t USAGE_KEY_5     = 0x00070022;
 
-        // —— 固定状态槽指针（首次执行时分配）——
-        static int32_t* p_btn_l   = nullptr;
-        static int32_t* p_btn[6]  = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };  // B3..B8
-        static int32_t* p_lctrl   = nullptr;
-        static int32_t* p_rctrl   = nullptr;
-        static int32_t* p_key_3   = nullptr;
-        static int32_t* p_key_4   = nullptr;
-        static int32_t* p_key_5   = nullptr;
+        constexpr uint16_t RETURN_TOTAL_FRAMES = 120;
+        constexpr uint64_t DOUBLE_CLICK_WINDOW = 350;
+        constexpr uint8_t  NUM_GUNS = 16;
+        constexpr uint8_t  NUM_SIDE_BTNS = 6;   // B3(中键) / B4 / B5 / B6 / B7 / B8
+
+        // 触发类型
+        constexpr uint8_t TRIG_NONE        = 0;
+        constexpr uint8_t TRIG_SINGLE      = 1;
+        constexpr uint8_t TRIG_DOUBLE      = 2;
+        constexpr uint8_t TRIG_CTRL_SINGLE = 3;
+        constexpr uint8_t TRIG_CTRL_DOUBLE = 4;
+
+        // —— 静态状态槽指针 ——
+        static int32_t* p_btn_l = nullptr;
+        static int32_t* p_btns[NUM_SIDE_BTNS] = { nullptr };   // B3..B8
+        static int32_t* p_lctrl = nullptr;
+        static int32_t* p_rctrl = nullptr;
+        static int32_t* p_key_3 = nullptr;
+        static int32_t* p_key_4 = nullptr;
+        static int32_t* p_key_5 = nullptr;
         static bool slots_inited = false;
         if (!slots_inited) {
-            p_btn_l  = get_state_ptr(USAGE_BTN_L,  0, true);
-            p_btn[0] = get_state_ptr(USAGE_BTN_3,  0, true);
-            p_btn[1] = get_state_ptr(USAGE_BTN_4,  0, true);
-            p_btn[2] = get_state_ptr(USAGE_BTN_5,  0, true);
-            p_btn[3] = get_state_ptr(USAGE_BTN_6,  0, true);
-            p_btn[4] = get_state_ptr(USAGE_BTN_7,  0, true);
-            p_btn[5] = get_state_ptr(USAGE_BTN_8,  0, true);
-            p_lctrl  = get_state_ptr(USAGE_LCTRL,  0, true);
-            p_rctrl  = get_state_ptr(USAGE_RCTRL,  0, true);
-            p_key_3  = get_state_ptr(USAGE_KEY_3,  0, true);
-            p_key_4  = get_state_ptr(USAGE_KEY_4,  0, true);
-            p_key_5  = get_state_ptr(USAGE_KEY_5,  0, true);
+            p_btn_l = get_state_ptr(USAGE_BTN_L, 0, true);
+            for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) {
+                p_btns[i] = get_state_ptr(0x00090003 + i, 0, true);   // B3=0x3, B4=0x4, ...
+            }
+            p_lctrl = get_state_ptr(USAGE_KEY_LCTRL, 0, true);
+            p_rctrl = get_state_ptr(USAGE_KEY_RCTRL, 0, true);
+            p_key_3 = get_state_ptr(USAGE_KEY_3, 0, true);
+            p_key_4 = get_state_ptr(USAGE_KEY_4, 0, true);
+            p_key_5 = get_state_ptr(USAGE_KEY_5, 0, true);
             slots_inited = true;
         }
 
-        // —— 动态键状态槽指针（跟随 Reg 13..16 / 33..36 配置变化重定位）——
-        static uint32_t cached_disable_usage[4] = { 0, 0, 0, 0 };
-        static int32_t* p_disable[4]            = { nullptr, nullptr, nullptr, nullptr };
-        static uint32_t cached_kbrec_usage[4]   = { 0, 0, 0, 0 };
-        static int32_t* p_kbrec[4]              = { nullptr, nullptr, nullptr, nullptr };
+        // —— 动态分配的 state ptr（usage 改变时重新拿）——
+        static uint32_t custom_disable_usage[4] = { 0 };
+        static int32_t* p_custom_disable[4] = { nullptr };
+        static uint32_t kbd_slot_usage[4] = { 0 };
+        static int32_t* p_kbd_slot[4] = { nullptr };
+        static uint8_t  kbd_slot_gun[4] = { 0 };
 
-        // —— 装弹：gun_id (-1 = 未装弹，0..15 = GUNS[] 下标) ——
-        static int armed_gun_id = -1;
+        // —— 扫 reverse_mapping，一次性拿出所有相关 register ——
+        uint16_t gun_cfg[NUM_GUNS] = { 0 };
+        uint32_t custom_disable_now[4] = { 0 };
+        uint32_t kbd_slot_usage_now[4] = { 0 };
+        uint8_t  kbd_slot_gun_now[4]   = { 0 };
+        int32_t  scale_now = 1000;
+
+        for (auto const& rev_map : reverse_mapping) {
+            if ((rev_map.target & 0xFFFF0000) != REGISTER_USAGE_PAGE) continue;
+            if (rev_map.sources.empty()) continue;
+            uint16_t reg = rev_map.target & 0xFFFF;
+            int32_t  v   = rev_map.sources[0].scaling;
+            if (reg == 0x0001) {
+                scale_now = (v > 0) ? v : 1000;
+            } else if (reg >= 0x0010 && reg < (0x0010 + NUM_GUNS)) {
+                gun_cfg[reg - 0x0010] = (uint16_t)(v < 0 ? 0 : v);
+            } else if (reg >= 0x0020 && reg < 0x0024) {
+                custom_disable_now[reg - 0x0020] = (uint32_t)(v < 0 ? 0 : v);
+            } else if (reg >= 0x0024 && reg < 0x002C) {
+                uint8_t idx = (reg - 0x0024) >> 1;
+                if (((reg - 0x0024) & 1) == 0) {
+                    kbd_slot_usage_now[idx] = (uint32_t)(v < 0 ? 0 : v);
+                } else {
+                    int32_t g = v;
+                    if (g < 0)        g = 0;
+                    if (g >= NUM_GUNS) g = NUM_GUNS - 1;
+                    kbd_slot_gun_now[idx] = (uint8_t)g;
+                }
+            }
+        }
+
+        // —— 自定义按键 usage 有变化时重新 get_state_ptr ——
+        for (uint8_t i = 0; i < 4; i++) {
+            if (custom_disable_usage[i] != custom_disable_now[i]) {
+                custom_disable_usage[i] = custom_disable_now[i];
+                p_custom_disable[i] = (custom_disable_now[i] != 0)
+                    ? get_state_ptr(custom_disable_now[i], 0, true)
+                    : nullptr;
+            }
+            if (kbd_slot_usage[i] != kbd_slot_usage_now[i]) {
+                kbd_slot_usage[i] = kbd_slot_usage_now[i];
+                p_kbd_slot[i] = (kbd_slot_usage_now[i] != 0)
+                    ? get_state_ptr(kbd_slot_usage_now[i], 0, true)
+                    : nullptr;
+            }
+            kbd_slot_gun[i] = kbd_slot_gun_now[i];
+        }
+
+        // —— 装弹模式（-1 = 未装弹，0..15 = 枪 index）——
+        static int8_t armed = -1;
 
         // —— 回放状态 ——
         static bool playing = false;
         static const recoil::TrackPoint* cur = nullptr;
         static uint16_t cur_len = 0;
         static uint16_t idx = 0;
-        static uint8_t step_remain = 0;
-        static int32_t step_x_milli = 0;
-        static int32_t step_y_milli = 0;
-        // —— 本次发射锁定的倍率（×1000，1000=1.0x）——
-        static int32_t scale_cur = 1000;
-        // —— 已发射的反向累计（milli-units），用于松开后回退 ——
-        static int32_t backx_milli = 0;
-        static int32_t backy_milli = 0;
+        static uint8_t  step_remain  = 0;
+        static int32_t  step_x_milli = 0;
+        static int32_t  step_y_milli = 0;
+        static int32_t  scale_cur    = 1000;   // 本次发射锁定的倍率
+        static int32_t  backx_milli  = 0;
+        static int32_t  backy_milli  = 0;
 
         // —— 回退状态 ——
-        static bool returning = false;
+        static bool     returning = false;
         static uint16_t ret_frames_left = 0;
 
-        // —— 上一帧按键状态（鼠标左键 + 6 个侧键 + 上一帧 disable 边沿 + 4 个键盘 recoil 槽）——
+        // —— 上一帧按键状态 ——
         static bool prev_l = false;
-        static bool prev_btn[6] = { false, false, false, false, false, false };  // B3..B8
-        static bool prev_any_disable = false;
-        static bool prev_kbrec_held[4] = { false, false, false, false };
+        static bool prev_btns[NUM_SIDE_BTNS]    = { false };
+        static bool prev_custom_disable[4]      = { false };
+        static bool prev_kbd_slot[4]            = { false };
+        static bool prev_key_3 = false, prev_key_4 = false, prev_key_5 = false;
 
-        // —— 每按键的双击窗口跟踪 ——
-        static uint64_t last_btn_edge_frame[6] = { 0, 0, 0, 0, 0, 0 };
-        static bool     last_btn_edge_valid[6] = { false, false, false, false, false, false };
+        // —— 每个侧键的双击窗口戳 ——
+        static uint64_t last_btn_edge_frame[NUM_SIDE_BTNS] = { 0 };
+        static bool     last_btn_edge_valid[NUM_SIDE_BTNS] = { false };
 
-        // —— 一次性扫描 reverse_mapping，读出本块需要的所有寄存器值 ——
-        // Reg 1: sens scaling；Reg 13..16: 自定义关闭键 usage；
-        // Reg 17..32: 16 把枪触发配置；Reg 33..36: 4 个键盘"键→枪"槽
-        int32_t reg_sens_scaling = 1000;
-        int32_t disable_key_usage[4] = { 0, 0, 0, 0 };
-        int32_t gun_cfg[16];
-        for (int g = 0; g < 16; g++) gun_cfg[g] = 0;
-        int32_t kbrec_cfg[4] = { 0, 0, 0, 0 };
-        for (auto const& rev_map : reverse_mapping) {
-            if ((rev_map.target & 0xFFFF0000) != REGISTER_USAGE_PAGE) continue;
-            if (rev_map.sources.empty()) continue;
-            uint16_t reg = rev_map.target & 0xFFFF;
-            int32_t v = rev_map.sources[0].scaling;
-            if      (reg == 1)                  reg_sens_scaling = v;
-            else if (reg >= 13 && reg <= 16)    disable_key_usage[reg - 13] = v;
-            else if (reg >= 17 && reg <= 32)    gun_cfg[reg - 17]           = v;
-            else if (reg >= 33 && reg <= 36)    kbrec_cfg[reg - 33]         = v;
+        // —— 当前帧状态读取 ——
+        bool btn_l     = p_btn_l && (*p_btn_l != 0);
+        bool ctrl_held = (p_lctrl && (*p_lctrl != 0)) || (p_rctrl && (*p_rctrl != 0));
+        bool btns_now[NUM_SIDE_BTNS];
+        bool edges_btns[NUM_SIDE_BTNS];
+        for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) {
+            btns_now[i]   = p_btns[i] && (*p_btns[i] != 0);
+            edges_btns[i] = btns_now[i] && !prev_btns[i];
         }
-
-        bool btn_l = p_btn_l && (*p_btn_l != 0);
-        bool btn_held_arr[6];
-        for (int b = 0; b < 6; b++) btn_held_arr[b] = p_btn[b] && (*p_btn[b] != 0);
-
-        bool ctrl_held = (p_lctrl && *p_lctrl != 0) || (p_rctrl && *p_rctrl != 0);
-
-        bool edge_l = btn_l && !prev_l;
+        bool edge_l     = btn_l && !prev_l;
+        bool key_3      = p_key_3 && (*p_key_3 != 0);
+        bool key_4      = p_key_4 && (*p_key_4 != 0);
+        bool key_5      = p_key_5 && (*p_key_5 != 0);
+        bool edge_key_3 = key_3 && !prev_key_3;
+        bool edge_key_4 = key_4 && !prev_key_4;
+        bool edge_key_5 = key_5 && !prev_key_5;
 
         bool has_x = our_usages_flat.count(USAGE_X) > 0;
         bool has_y = our_usages_flat.count(USAGE_Y) > 0;
 
-        // 抹掉 accumulated 里 <1 像素 的残余，防止下次用户小幅移动被吃掉
         auto clear_subpixel_residue = [&]() {
-            if (has_x) {
-                int32_t& a = accumulated[USAGE_X];
-                a -= a % 1000;
-            }
-            if (has_y) {
-                int32_t& a = accumulated[USAGE_Y];
-                a -= a % 1000;
-            }
+            if (has_x) { int32_t& a = accumulated[USAGE_X]; a -= a % 1000; }
+            if (has_y) { int32_t& a = accumulated[USAGE_Y]; a -= a % 1000; }
         };
-
         auto start_return = [&]() {
             if (backx_milli != 0 || backy_milli != 0) {
                 returning = true;
@@ -3330,117 +3329,115 @@ void process_mapping(bool auto_repeat) {
                 clear_subpixel_residue();
             }
         };
-
-        // —— 检测每个鼠标侧键的按下边沿，分解为 (button_id, trigger_type) ——
-        // trigger_type 编码：1=single 2=double 3=ctrl+single 4=ctrl+double
-        // 单击立即触发；若 350ms 内再次按下则升级为双击（双击会覆盖之前的单击装弹）
-        auto match_gun_for = [&](int button_id, int trigger_type) -> int {
-            for (int g = 0; g < 16; g++) {
-                int32_t cfg = gun_cfg[g];
+        auto trigger_unload = [&]() {
+            armed = -1;
+            for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) last_btn_edge_valid[i] = false;
+            if (playing) {
+                playing = false;
+                step_remain  = 0;
+                step_x_milli = 0;
+                step_y_milli = 0;
+                start_return();
+            }
+        };
+        auto find_gun_for_event = [&](uint8_t btn_offset, uint8_t trig_type) -> int8_t {
+            for (uint8_t g = 0; g < NUM_GUNS; g++) {
+                uint16_t cfg = gun_cfg[g];
                 if (cfg == 0) continue;
-                int g_trigger = cfg & 0xFF;
-                int g_button  = (cfg >> 8) & 0xFF;
-                if (g_trigger == trigger_type && g_button == button_id) return g;
+                uint8_t cfg_btn  = cfg & 0xFF;
+                uint8_t cfg_trig = (cfg >> 8) & 0xFF;
+                if (cfg_btn == btn_offset && cfg_trig == trig_type) {
+                    return (int8_t)g;
+                }
             }
             return -1;
         };
 
-        for (int b = 0; b < 6; b++) {
-            bool edge = btn_held_arr[b] && !prev_btn[b];
-            if (!edge) continue;
-            int button_id = b + 3;   // B3..B8
-            int trigger_type;
-            bool is_double = (last_btn_edge_valid[b] &&
-                              (frame_counter - last_btn_edge_frame[b]) < DOUBLE_CLICK_WINDOW);
-            if (is_double) {
-                trigger_type = ctrl_held ? 4 : 2;
-                last_btn_edge_valid[b] = false;   // 消费掉，避免三连击意外升级
+        // —— 侧键边沿 → 单/双击 + ctrl 状态 → 找对应枪 ——
+        for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) {
+            if (!edges_btns[i]) continue;
+            uint8_t btn_offset = 3 + i;
+            bool is_double;
+            if (last_btn_edge_valid[i] &&
+                (frame_counter - last_btn_edge_frame[i]) < DOUBLE_CLICK_WINDOW) {
+                is_double = true;
+                last_btn_edge_valid[i] = false;
             } else {
-                trigger_type = ctrl_held ? 3 : 1;
-                last_btn_edge_frame[b] = frame_counter;
-                last_btn_edge_valid[b] = true;
+                is_double = false;
+                last_btn_edge_frame[i] = frame_counter;
+                last_btn_edge_valid[i] = true;
             }
-            int g = match_gun_for(button_id, trigger_type);
-            if (g >= 0) armed_gun_id = g;
+            uint8_t trig_type;
+            if (ctrl_held) trig_type = is_double ? TRIG_CTRL_DOUBLE : TRIG_CTRL_SINGLE;
+            else           trig_type = is_double ? TRIG_DOUBLE      : TRIG_SINGLE;
+            int8_t g = find_gun_for_event(btn_offset, trig_type);
+            if (g >= 0) armed = g;
         }
 
-        // —— 键盘 4 槽"键 → 枪"：按下边沿直接装弹 ——
-        for (int i = 0; i < 4; i++) {
-            int32_t cfg = kbrec_cfg[i];
-            if (cfg == 0) { prev_kbrec_held[i] = false; continue; }
-            uint16_t keycode = (uint16_t)(cfg & 0xFFFF);
-            int gun_id = ((cfg >> 16) & 0x1F) - 1;   // 1..16 -> 0..15
-            if (keycode == 0 || gun_id < 0 || gun_id >= 16) {
-                prev_kbrec_held[i] = false;
-                continue;
+        // —— 键盘装弹槽：边沿 → 装枪 ——
+        for (uint8_t i = 0; i < 4; i++) {
+            bool now  = p_kbd_slot[i] && (*p_kbd_slot[i] != 0);
+            bool edge = now && !prev_kbd_slot[i];
+            if (edge && kbd_slot_usage[i] != 0) {
+                armed = (int8_t)kbd_slot_gun[i];
             }
-            uint32_t usage = 0x00070000u | keycode;
-            if (usage != cached_kbrec_usage[i]) {
-                cached_kbrec_usage[i] = usage;
-                p_kbrec[i] = get_state_ptr(usage, 0, true);
-            }
-            bool held = p_kbrec[i] && (*p_kbrec[i] != 0);
-            if (held && !prev_kbrec_held[i]) {
-                armed_gun_id = gun_id;
-            }
-            prev_kbrec_held[i] = held;
+            prev_kbd_slot[i] = now;
         }
 
-        // —— 关闭压枪键聚合：硬接 3/4/5 + 4 个自定义槽 ——
-        bool any_disable_held =
-              (p_key_3 && *p_key_3 != 0)
-           || (p_key_4 && *p_key_4 != 0)
-           || (p_key_5 && *p_key_5 != 0);
-        for (int i = 0; i < 4; i++) {
-            uint32_t usage = (uint32_t) disable_key_usage[i];
-            if (usage == 0) {
-                cached_disable_usage[i] = 0;
-                p_disable[i] = nullptr;
-                continue;
+        // —— 关闭压枪：硬编码 3 / 4 / 5 ——
+        if (edge_key_3 || edge_key_4 || edge_key_5) {
+            trigger_unload();
+        }
+        // —— 关闭压枪：4 个自定义键 ——
+        for (uint8_t i = 0; i < 4; i++) {
+            bool now  = p_custom_disable[i] && (*p_custom_disable[i] != 0);
+            bool edge = now && !prev_custom_disable[i];
+            if (edge && custom_disable_usage[i] != 0) {
+                trigger_unload();
             }
-            if (usage != cached_disable_usage[i]) {
-                cached_disable_usage[i] = usage;
-                p_disable[i] = get_state_ptr(usage, 0, true);
-            }
-            if (p_disable[i] && *p_disable[i] != 0) any_disable_held = true;
+            prev_custom_disable[i] = now;
         }
 
-        // —— 关闭压枪：边沿触发，逻辑同 B4 ——
-        bool disable_edge = any_disable_held && !prev_any_disable;
-        if (disable_edge) {
-            armed_gun_id = -1;
-            for (int b = 0; b < 6; b++) last_btn_edge_valid[b] = false;
-            if (playing) {
-                playing = false;
-                step_remain = 0;
-                step_x_milli = step_y_milli = 0;
-                start_return();
-            }
-        }
-
-        // —— 触发回放 ——
-        if (edge_l && armed_gun_id >= 0 && !playing && !returning) {
-            // 锁定本次发射倍率
-            int32_t s = reg_sens_scaling;
-            if (s <= 0)   s = 1000;
+        // —— 左键边沿：装弹中 → 开播 ——
+        if (edge_l && armed >= 0 && !playing && !returning) {
+            int32_t s = scale_now;
             if (s < 100)  s = 100;
             if (s > 5000) s = 5000;
             scale_cur = s;
-            cur     = recoil::GUNS[armed_gun_id].track;
-            cur_len = recoil::GUNS[armed_gun_id].len;
+            switch (armed) {
+                case  0: cur = recoil::AK47;  cur_len = recoil::AK47_LEN;  break;
+                case  1: cur = recoil::AUG;   cur_len = recoil::AUG_LEN;   break;
+                case  2: cur = recoil::FAMAS; cur_len = recoil::FAMAS_LEN; break;
+                case  3: cur = recoil::GALIL; cur_len = recoil::GALIL_LEN; break;
+                case  4: cur = recoil::M4A1;  cur_len = recoil::M4A1_LEN;  break;
+                case  5: cur = recoil::M4A4;  cur_len = recoil::M4A4_LEN;  break;
+                case  6: cur = recoil::SG553; cur_len = recoil::SG553_LEN; break;
+                case  7: cur = recoil::BIZON; cur_len = recoil::BIZON_LEN; break;
+                case  8: cur = recoil::MAC10; cur_len = recoil::MAC10_LEN; break;
+                case  9: cur = recoil::MP5SD; cur_len = recoil::MP5SD_LEN; break;
+                case 10: cur = recoil::MP7;   cur_len = recoil::MP7_LEN;   break;
+                case 11: cur = recoil::MP9;   cur_len = recoil::MP9_LEN;   break;
+                case 12: cur = recoil::P90;   cur_len = recoil::P90_LEN;   break;
+                case 13: cur = recoil::UMP45; cur_len = recoil::UMP45_LEN; break;
+                case 14: cur = recoil::CZ75;  cur_len = recoil::CZ75_LEN;  break;
+                case 15: cur = recoil::M249;  cur_len = recoil::M249_LEN;  break;
+                default: cur = nullptr; cur_len = 0; break;
+            }
             idx = 0;
-            step_remain = 0;
-            step_x_milli = step_y_milli = 0;
-            backx_milli = 0;
-            backy_milli = 0;
-            playing = true;
+            step_remain  = 0;
+            step_x_milli = 0;
+            step_y_milli = 0;
+            backx_milli  = 0;
+            backy_milli  = 0;
+            if (cur != nullptr && cur_len > 0) playing = true;
         }
 
         // —— 左键松开 → 立即停止并回退 ——
         if (playing && !btn_l) {
             playing = false;
-            step_remain = 0;
-            step_x_milli = step_y_milli = 0;
+            step_remain  = 0;
+            step_x_milli = 0;
+            step_y_milli = 0;
             start_return();
         }
 
@@ -3452,7 +3449,7 @@ void process_mapping(bool auto_repeat) {
                     int8_t  dy  = cur[idx].dy;
                     uint8_t dur = cur[idx].delay_ms;
                     if (dur == 0) dur = 1;
-                    step_remain = dur;
+                    step_remain  = dur;
                     step_x_milli = (int32_t)dx * scale_cur;
                     step_y_milli = (int32_t)dy * scale_cur;
                     backx_milli -= step_x_milli;
@@ -3460,7 +3457,8 @@ void process_mapping(bool auto_repeat) {
                     idx++;
                 } else {
                     playing = false;
-                    step_x_milli = step_y_milli = 0;
+                    step_x_milli = 0;
+                    step_y_milli = 0;
                     start_return();
                 }
             }
@@ -3497,147 +3495,138 @@ void process_mapping(bool auto_repeat) {
         }
 
         prev_l = btn_l;
-        for (int b = 0; b < 6; b++) prev_btn[b] = btn_held_arr[b];
-        prev_any_disable = any_disable_held;
+        for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) prev_btns[i] = btns_now[i];
+        prev_key_3 = key_3;
+        prev_key_4 = key_4;
+        prev_key_5 = key_5;
     }
     // ============================================================
-    // 反向键自动补点（Null Cancel / Counter-Strafe）+ 跳投 + 大跳
+    // 反向键自动补点（Counter-Strafe）+ 跳投 + Space大跳
     //
-    // 单方向反向急停（启用条件：对应 Register 延迟 > 0）：
-    //   松开 A、D 未按  → 注入 D 持续 delay_A  ms
-    //   松开 D、A 未按  → 注入 A 持续 delay_D  ms
-    //   松开 W、S 未按  → 注入 S 持续 delay_W  ms
-    //   松开 S、W 未按  → 注入 W 持续 delay_S  ms
+    // 单方向反向急停（Register 延迟 > 0 时启用）：
+    //   松开 A、D 未按 → 注入 D 持续 delay_A ms        (Register 0xFFF50002)
+    //   松开 D、A 未按 → 注入 A 持续 delay_D ms        (         0xFFF50003)
+    //   松开 W、S 未按 → 注入 S 持续 delay_W ms        (         0xFFF50004)
+    //   松开 S、W 未按 → 注入 W 持续 delay_S ms        (         0xFFF50005)
     //
-    // 对角线反向急停（同帧两键同时松开时触发，覆盖单方向）：
-    //   松开 W+A → 同时注入 S+D 持续 delay_WA ms
-    //   松开 W+D → 同时注入 S+A 持续 delay_WD ms
-    //   松开 S+A → 同时注入 W+D 持续 delay_SA ms
-    //   松开 S+D → 同时注入 W+A 持续 delay_SD ms
+    // 对角线反向急停（同帧两键同时松开，覆盖单方向）：
+    //   松开 W+A → S+D 持续 delay_WA ms                (         0xFFF50006)
+    //   松开 W+D → S+A 持续 delay_WD ms                (         0xFFF50007)
+    //   松开 S+A → W+D 持续 delay_SA ms                (         0xFFF50008)
+    //   松开 S+D → W+A 持续 delay_SD ms                (         0xFFF50009)
     //
-    // 跳投（启用条件：delay_JT > 0 且 jt_trigger_usage > 0）：
-    //   配置的跳投触发键按下边沿 → delay_JT ms 后强制清零 reports 里的
-    //   鼠标左键 + 右键 bit（CS2 双键中抛），直到用户同时松开物理左右键
-    //   或抑制上限 500ms 解除，才恢复正常输出。
+    // 跳投（delay_JT > 0 且 jt_key_usage != 0 时启用）：
+    //   按下 JT 触发键 → 报文里"按下"Space（CS2 起跳）
+    //   delay_JT ms 后 → 同时清零左键和右键 bit
+    //   抑制解除条件：物理左键和物理右键都松开（或抑制上限 500ms）
+    //   触发键 HID usage 由 Register 0xFFF5000B 配置（0=禁用）
+    //   延迟由 Register 0xFFF5000A 配置（ms）
     //
-    // 大跳（启用条件：big_jump_on != 0）：
-    //   Space 按下期间，额外向输出 reports 注入 Left Ctrl 按下。
-    //   实现为"按住期间持续 OR"，因此用户原本独立按 Ctrl 也不会冲突。
-    //
-    // 参数源：从 Register 2..12 读取：
-    //   Reg  2  A 急停延迟       Reg  3  D 急停延迟
-    //   Reg  4  W 急停延迟       Reg  5  S 急停延迟
-    //   Reg  6  W+A 对角线延迟   Reg  7  W+D 对角线延迟
-    //   Reg  8  S+A 对角线延迟   Reg  9  S+D 对角线延迟
-    //   Reg 10  跳投延迟（ms，0 = 禁用）
-    //   Reg 11  跳投触发键的完整 HID usage（i32，0 = 禁用）
-    //   Reg 12  大跳开关（0 = 关，非 0 = 开）
-    //
-    // 网页通过 mapping.scaling 字段直接写入这些数值（绕开 mapping → register
-    // 整数除法陷阱）。
+    // Space大跳（Register 0xFFF5000C != 0 时启用）：
+    //   按下物理 Space → 同帧注入 Left Ctrl（蹲跳，CS2 高跳一格）
+    //   松开 Space → 自动停止注入
+    //   仅响应物理 Space input_state，跳投块注入的 Space 不触发 Ctrl
     // ============================================================
     {
-        constexpr uint32_t USAGE_KEY_A      = 0x00070004;
-        constexpr uint32_t USAGE_KEY_D      = 0x00070007;
-        constexpr uint32_t USAGE_KEY_W      = 0x0007001A;
-        constexpr uint32_t USAGE_KEY_S      = 0x00070016;
-        constexpr uint32_t USAGE_KEY_SPACE  = 0x0007002C;
-        constexpr uint32_t USAGE_KEY_LCTRL  = 0x000700E0;
-        constexpr uint32_t USAGE_BTN_L_JT   = 0x00090001;
-        constexpr uint32_t USAGE_BTN_R_JT   = 0x00090002;
+        constexpr uint32_t USAGE_KEY_A     = 0x00070004;
+        constexpr uint32_t USAGE_KEY_D     = 0x00070007;
+        constexpr uint32_t USAGE_KEY_W     = 0x0007001A;
+        constexpr uint32_t USAGE_KEY_S     = 0x00070016;
+        constexpr uint32_t USAGE_KEY_SPACE = 0x0007002C;
+        constexpr uint32_t USAGE_KEY_LCTRL = 0x000700E0;
+        constexpr uint32_t USAGE_BTN_LEFT  = 0x00090001;
+        constexpr uint32_t USAGE_BTN_RIGHT = 0x00090002;
 
         constexpr uint16_t JT_SUPPRESS_LIMIT_MS = 500;
         constexpr int32_t  DELAY_MAX_MS         = 1000;
 
-        // —— 状态槽指针（首次执行时分配，之后缓存）——
+        // —— 静态指针 ——
         static int32_t* p_a   = nullptr;
         static int32_t* p_d   = nullptr;
         static int32_t* p_w   = nullptr;
         static int32_t* p_s   = nullptr;
         static int32_t* p_sp  = nullptr;
-        static int32_t* p_lj  = nullptr;
-        static int32_t* p_rj  = nullptr;
-        if (p_a   == nullptr) p_a   = get_state_ptr(USAGE_KEY_A,     0, true);
-        if (p_d   == nullptr) p_d   = get_state_ptr(USAGE_KEY_D,     0, true);
-        if (p_w   == nullptr) p_w   = get_state_ptr(USAGE_KEY_W,     0, true);
-        if (p_s   == nullptr) p_s   = get_state_ptr(USAGE_KEY_S,     0, true);
-        if (p_sp  == nullptr) p_sp  = get_state_ptr(USAGE_KEY_SPACE, 0, true);
-        if (p_lj  == nullptr) p_lj  = get_state_ptr(USAGE_BTN_L_JT,  0, true);
-        if (p_rj  == nullptr) p_rj  = get_state_ptr(USAGE_BTN_R_JT,  0, true);
+        static int32_t* p_l   = nullptr;
+        static int32_t* p_r   = nullptr;
+        if (p_a  == nullptr) p_a  = get_state_ptr(USAGE_KEY_A,     0, true);
+        if (p_d  == nullptr) p_d  = get_state_ptr(USAGE_KEY_D,     0, true);
+        if (p_w  == nullptr) p_w  = get_state_ptr(USAGE_KEY_W,     0, true);
+        if (p_s  == nullptr) p_s  = get_state_ptr(USAGE_KEY_S,     0, true);
+        if (p_sp == nullptr) p_sp = get_state_ptr(USAGE_KEY_SPACE, 0, true);
+        if (p_l  == nullptr) p_l  = get_state_ptr(USAGE_BTN_LEFT,  0, true);
+        if (p_r  == nullptr) p_r  = get_state_ptr(USAGE_BTN_RIGHT, 0, true);
 
-        // 跳投触发键的动态状态槽（跟随 Reg 11 配置变化重定位）
-        static uint32_t cached_jt_usage = 0;
-        static int32_t* p_jt_trigger    = nullptr;
-        static bool prev_jt_trigger_held = false;
+        // —— JT 触发键（动态分配 state ptr）——
+        static uint32_t jt_key_usage_cached = 0;
+        static int32_t* p_jt = nullptr;
 
-        bool a_held  = p_a   && (*p_a   != 0);
-        bool d_held  = p_d   && (*p_d   != 0);
-        bool w_held  = p_w   && (*p_w   != 0);
-        bool s_held  = p_s   && (*p_s   != 0);
-        bool sp_held = p_sp  && (*p_sp  != 0);
-        bool l_held  = p_lj  && (*p_lj  != 0);
-        bool r_held  = p_rj  && (*p_rj  != 0);
+        bool a_held  = p_a  && (*p_a  != 0);
+        bool d_held  = p_d  && (*p_d  != 0);
+        bool w_held  = p_w  && (*p_w  != 0);
+        bool s_held  = p_s  && (*p_s  != 0);
+        bool sp_held = p_sp && (*p_sp != 0);
+        bool l_held  = p_l  && (*p_l  != 0);
+        bool r_held  = p_r  && (*p_r  != 0);
 
         static bool prev_a_cs  = false;
         static bool prev_d_cs  = false;
         static bool prev_w_cs  = false;
         static bool prev_s_cs  = false;
-        static bool prev_sp_cs = false;
+        static bool prev_jt    = false;
 
-        // 注入计数器（>0 表示该键持续被注入按下）
         static uint16_t inj_A_ms = 0;
         static uint16_t inj_D_ms = 0;
         static uint16_t inj_W_ms = 0;
         static uint16_t inj_S_ms = 0;
 
-        // 跳投状态
-        static uint16_t jt_pre_ms      = 0;   // 触发键按下后到松开 L+R 的倒计时
-        static uint16_t jt_suppress_ms = 0;   // 抑制左右键剩余 ms
+        static uint16_t jt_pre_ms      = 0;
+        static uint16_t jt_suppress_ms = 0;
 
-        // —— 一次性扫描 reverse_mapping 取出所有相关 register 值 ——
-        // delay 类按 DELAY_MAX_MS 截断；usage / 开关类只做非负截断。
+        // —— 一次性扫 reverse_mapping ——
         int32_t delay_A = 0, delay_D = 0, delay_W = 0, delay_S = 0;
         int32_t delay_WA = 0, delay_WD = 0, delay_SA = 0, delay_SD = 0;
         int32_t delay_JT = 0;
-        int32_t jt_trigger_usage_raw = 0;
-        int32_t big_jump_on_raw      = 0;
+        uint32_t jt_key_now = 0;
+        int32_t combo_enabled = 0;
         for (auto const& rev_map : reverse_mapping) {
             if ((rev_map.target & 0xFFFF0000) != REGISTER_USAGE_PAGE) continue;
             if (rev_map.sources.empty()) continue;
             uint16_t reg = rev_map.target & 0xFFFF;
-            int32_t v = rev_map.sources[0].scaling;
-            auto clamp_delay = [&](int32_t x) {
-                if (x < 0) x = 0;
-                if (x > DELAY_MAX_MS) x = DELAY_MAX_MS;
-                return x;
-            };
+            int32_t  v   = rev_map.sources[0].scaling;
+            if (v < 0) v = 0;
             switch (reg) {
-                case  2: delay_A  = clamp_delay(v); break;
-                case  3: delay_D  = clamp_delay(v); break;
-                case  4: delay_W  = clamp_delay(v); break;
-                case  5: delay_S  = clamp_delay(v); break;
-                case  6: delay_WA = clamp_delay(v); break;
-                case  7: delay_WD = clamp_delay(v); break;
-                case  8: delay_SA = clamp_delay(v); break;
-                case  9: delay_SD = clamp_delay(v); break;
-                case 10: delay_JT = clamp_delay(v); break;
-                case 11: jt_trigger_usage_raw = (v < 0 ? 0 : v); break;
-                case 12: big_jump_on_raw      = (v < 0 ? 0 : v); break;
+                case 0x02: delay_A  = v; break;
+                case 0x03: delay_D  = v; break;
+                case 0x04: delay_W  = v; break;
+                case 0x05: delay_S  = v; break;
+                case 0x06: delay_WA = v; break;
+                case 0x07: delay_WD = v; break;
+                case 0x08: delay_SA = v; break;
+                case 0x09: delay_SD = v; break;
+                case 0x0A: delay_JT = v; break;
+                case 0x0B: jt_key_now = (uint32_t)v; break;
+                case 0x0C: combo_enabled = v; break;
                 default: break;
             }
         }
+        if (delay_A  > DELAY_MAX_MS) delay_A  = DELAY_MAX_MS;
+        if (delay_D  > DELAY_MAX_MS) delay_D  = DELAY_MAX_MS;
+        if (delay_W  > DELAY_MAX_MS) delay_W  = DELAY_MAX_MS;
+        if (delay_S  > DELAY_MAX_MS) delay_S  = DELAY_MAX_MS;
+        if (delay_WA > DELAY_MAX_MS) delay_WA = DELAY_MAX_MS;
+        if (delay_WD > DELAY_MAX_MS) delay_WD = DELAY_MAX_MS;
+        if (delay_SA > DELAY_MAX_MS) delay_SA = DELAY_MAX_MS;
+        if (delay_SD > DELAY_MAX_MS) delay_SD = DELAY_MAX_MS;
+        if (delay_JT > DELAY_MAX_MS) delay_JT = DELAY_MAX_MS;
 
-        // —— 跟随 Reg 11 重新解析跳投触发键 ——
-        uint32_t jt_trigger_usage = (uint32_t) jt_trigger_usage_raw;
-        if (jt_trigger_usage != cached_jt_usage) {
-            cached_jt_usage = jt_trigger_usage;
-            p_jt_trigger = jt_trigger_usage ? get_state_ptr(jt_trigger_usage, 0, true) : nullptr;
-            prev_jt_trigger_held = false;
+        // —— JT 触发键 usage 变化时重拿 ptr ——
+        if (jt_key_usage_cached != jt_key_now) {
+            jt_key_usage_cached = jt_key_now;
+            p_jt = (jt_key_now != 0) ? get_state_ptr(jt_key_now, 0, true) : nullptr;
         }
-        bool jt_trigger_held =
-            (jt_trigger_usage != 0) && p_jt_trigger && (*p_jt_trigger != 0);
+        bool jt_held = p_jt && (*p_jt != 0);
 
-        // —— 对角线触发：上一帧两键都按、当前帧两键都不按 ——
+        // —— 对角线触发 ——
         bool diag_WA = (delay_WA > 0) && prev_w_cs && prev_a_cs && !w_held && !a_held;
         bool diag_WD = (delay_WD > 0) && prev_w_cs && prev_d_cs && !w_held && !d_held;
         bool diag_SA = (delay_SA > 0) && prev_s_cs && prev_a_cs && !s_held && !a_held;
@@ -3648,25 +3637,20 @@ void process_mapping(bool auto_repeat) {
         if (diag_SA) { inj_W_ms = delay_SA; inj_D_ms = delay_SA; }
         if (diag_SD) { inj_W_ms = delay_SD; inj_A_ms = delay_SD; }
 
-        // —— 单方向触发：松开某键、其同轴反向键未按、且未被对角线覆盖 ——
+        // —— 单方向触发 ——
         bool covered_release_A = diag_WA || diag_SA;
         bool covered_release_D = diag_WD || diag_SD;
         bool covered_release_W = diag_WA || diag_WD;
         bool covered_release_S = diag_SA || diag_SD;
 
-        if (delay_A > 0 && prev_a_cs && !a_held && !d_held && !covered_release_A)
-            inj_D_ms = delay_A;   // 松开 A → 注入 D
-        if (delay_D > 0 && prev_d_cs && !d_held && !a_held && !covered_release_D)
-            inj_A_ms = delay_D;   // 松开 D → 注入 A
-        if (delay_W > 0 && prev_w_cs && !w_held && !s_held && !covered_release_W)
-            inj_S_ms = delay_W;   // 松开 W → 注入 S
-        if (delay_S > 0 && prev_s_cs && !s_held && !w_held && !covered_release_S)
-            inj_W_ms = delay_S;   // 松开 S → 注入 W
+        if (delay_A > 0 && prev_a_cs && !a_held && !d_held && !covered_release_A) inj_D_ms = delay_A;
+        if (delay_D > 0 && prev_d_cs && !d_held && !a_held && !covered_release_D) inj_A_ms = delay_D;
+        if (delay_W > 0 && prev_w_cs && !w_held && !s_held && !covered_release_W) inj_S_ms = delay_W;
+        if (delay_S > 0 && prev_s_cs && !s_held && !w_held && !covered_release_S) inj_W_ms = delay_S;
 
-        // —— 跳投触发：配置的跳投触发键按下边沿，启动倒计时 ——
-        if (delay_JT > 0 && jt_trigger_usage != 0 &&
-            jt_trigger_held && !prev_jt_trigger_held) {
-            jt_pre_ms = (uint16_t) delay_JT;
+        // —— JT 边沿启动倒计时 ——
+        if (delay_JT > 0 && jt_held && !prev_jt) {
+            jt_pre_ms = (uint16_t)delay_JT;
         }
         if (jt_pre_ms > 0) {
             jt_pre_ms--;
@@ -3674,9 +3658,8 @@ void process_mapping(bool auto_repeat) {
                 jt_suppress_ms = JT_SUPPRESS_LIMIT_MS;
             }
         }
-        prev_jt_trigger_held = jt_trigger_held;
 
-        // —— 工具：在 reports 里"按下"一个 usage（array / bitfield 自适应）——
+        // —— reports 操作辅助 ——
         auto press_in_report = [&](uint32_t usage) {
             for (auto const& array_usage : our_array_range_usages) {
                 if ((usage >= array_usage.usage) &&
@@ -3686,13 +3669,11 @@ void process_mapping(bool auto_repeat) {
                     const uint8_t  sz  = array_usage.usage_def.size;
                     int32_t target_val = array_usage.usage_def.logical_minimum
                                          + usage - array_usage.usage;
-                    // 已存在则不重复写入（避免 6KRO 槽位重复）
                     for (unsigned int i = 0; i < array_usage.usage_def.count; i++) {
                         int32_t existing = get_bits(reports[rid], report_sizes[rid],
                                                     bp0 + i * sz, sz);
                         if (existing == target_val) return;
                     }
-                    // 找首个空槽
                     for (unsigned int i = 0; i < array_usage.usage_def.count; i++) {
                         int32_t existing = get_bits(reports[rid], report_sizes[rid],
                                                     bp0 + i * sz, sz);
@@ -3702,10 +3683,9 @@ void process_mapping(bool auto_repeat) {
                             return;
                         }
                     }
-                    return;   // 槽位满，放弃
+                    return;
                 }
             }
-            // bitfield NKRO 路径
             auto it = our_usages_flat.find(usage);
             if (it != our_usages_flat.end()) {
                 const usage_def_t& u = it->second;
@@ -3714,7 +3694,6 @@ void process_mapping(bool auto_repeat) {
             }
         };
 
-        // —— 工具：在 reports 里"松开"一个 usage ——
         auto release_in_report = [&](uint32_t usage) {
             for (auto const& array_usage : our_array_range_usages) {
                 if ((usage >= array_usage.usage) &&
@@ -3743,7 +3722,7 @@ void process_mapping(bool auto_repeat) {
             }
         };
 
-        // —— 执行注入 + 倒计时 ——
+        // —— 反向急停注入 ——
         auto tick_inject = [&](uint16_t& counter, uint32_t usage, bool user_holding) {
             if (counter > 0) {
                 if (!user_holding) press_in_report(usage);
@@ -3755,29 +3734,28 @@ void process_mapping(bool auto_repeat) {
         tick_inject(inj_W_ms, USAGE_KEY_W, w_held);
         tick_inject(inj_S_ms, USAGE_KEY_S, s_held);
 
-        // —— 执行跳投左右键抑制 ——
-        // 双键中抛：同时清零左键 + 右键 bit。
-        // 解除条件：用户同时松开物理左键与右键，或抑制上限 500ms 到达。
+        // —— JT 按住期间持续注入 Space（CS2 起跳）——
+        if (jt_held) {
+            press_in_report(USAGE_KEY_SPACE);
+        }
+        // —— JT 抑制 L+R ——
         if (jt_suppress_ms > 0) {
-            release_in_report(USAGE_BTN_L_JT);
-            release_in_report(USAGE_BTN_R_JT);
+            release_in_report(USAGE_BTN_LEFT);
+            release_in_report(USAGE_BTN_RIGHT);
             jt_suppress_ms--;
             if (!l_held && !r_held) jt_suppress_ms = 0;
         }
 
-        // —— 执行大跳：Space 按下期间持续 OR 上 Left Ctrl ——
-        // 用户独立按 Ctrl 不冲突，松开 Space 后停止注入；
-        // 若用户在按 Space 同时也按 Ctrl，松开 Space 后 Ctrl 仍由用户的常规
-        // 映射通路维持，不受影响。
-        if (big_jump_on_raw != 0 && sp_held) {
+        // —— Space 大跳 combo：物理 Space 按住时同帧注入 Left Ctrl ——
+        if (combo_enabled != 0 && sp_held) {
             press_in_report(USAGE_KEY_LCTRL);
         }
 
-        prev_a_cs  = a_held;
-        prev_d_cs  = d_held;
-        prev_w_cs  = w_held;
-        prev_s_cs  = s_held;
-        prev_sp_cs = sp_held;
+        prev_a_cs = a_held;
+        prev_d_cs = d_held;
+        prev_w_cs = w_held;
+        prev_s_cs = s_held;
+        prev_jt   = jt_held;
     }
     // execute queued macros
     if (!macro_queue.empty()) {
