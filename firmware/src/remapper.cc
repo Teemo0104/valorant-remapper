@@ -3157,10 +3157,12 @@ void process_mapping(bool auto_repeat) {
     //                              其它    = (trig_type << 8) | btn_offset
     //                              trig_type: 1=单击 2=双击 3=Ctrl+单击 4=Ctrl+双击
     //                              btn_offset: 3..8 对应 B3(中键)..B8
-    //   Register 0xFFF50020..0023  4 个自定义"关闭压枪"键 HID usage
-    //   Register 0xFFF50024..002B  4 组键盘装弹：偶=HID usage, 奇=枪 index(0..15)
+    //   Register 0xFFF50020..0026  7 个自定义"关闭压枪"键 HID usage
+    //   Register 0xFFF50030..0033  4 个键盘装弹槽
+    //                              0 = 关闭
+    //                              其它 = ((gun_index+1) << 16) | keycode_lo (低 16 位 HID usage)
     //
-    // 关闭压枪固定键：键盘横排 3 / 4 / 5（HID usage 0x20/0x21/0x22）
+    // ⚠ 已移除：键盘横排 3 / 4 / 5 的硬接关闭压枪。取消压枪只能通过 7 个自定义键。
     //
     // 枪 index 顺序：
     //   0 AK47   1 AUG   2 FAMAS  3 GALIL  4 M4A1  5 M4A4  6 SG553   (步枪)
@@ -3174,14 +3176,13 @@ void process_mapping(bool auto_repeat) {
         constexpr uint32_t USAGE_BTN_L     = 0x00090001;
         constexpr uint32_t USAGE_KEY_LCTRL = 0x000700E0;
         constexpr uint32_t USAGE_KEY_RCTRL = 0x000700E4;
-        constexpr uint32_t USAGE_KEY_3     = 0x00070020;
-        constexpr uint32_t USAGE_KEY_4     = 0x00070021;
-        constexpr uint32_t USAGE_KEY_5     = 0x00070022;
 
         constexpr uint16_t RETURN_TOTAL_FRAMES = 120;
         constexpr uint64_t DOUBLE_CLICK_WINDOW = 350;
         constexpr uint8_t  NUM_GUNS = 16;
         constexpr uint8_t  NUM_SIDE_BTNS = 6;   // B3(中键) / B4 / B5 / B6 / B7 / B8
+        constexpr uint8_t  NUM_CUSTOM_DISABLE = 7;  // 自定义关闭压枪键槽数量
+        constexpr uint8_t  NUM_KBD_SLOTS = 4;       // 键盘装弹槽数量
 
         // 触发类型
         constexpr uint8_t TRIG_NONE        = 0;
@@ -3195,9 +3196,6 @@ void process_mapping(bool auto_repeat) {
         static int32_t* p_btns[NUM_SIDE_BTNS] = { nullptr };   // B3..B8
         static int32_t* p_lctrl = nullptr;
         static int32_t* p_rctrl = nullptr;
-        static int32_t* p_key_3 = nullptr;
-        static int32_t* p_key_4 = nullptr;
-        static int32_t* p_key_5 = nullptr;
         static bool slots_inited = false;
         if (!slots_inited) {
             p_btn_l = get_state_ptr(USAGE_BTN_L, 0, true);
@@ -3206,24 +3204,21 @@ void process_mapping(bool auto_repeat) {
             }
             p_lctrl = get_state_ptr(USAGE_KEY_LCTRL, 0, true);
             p_rctrl = get_state_ptr(USAGE_KEY_RCTRL, 0, true);
-            p_key_3 = get_state_ptr(USAGE_KEY_3, 0, true);
-            p_key_4 = get_state_ptr(USAGE_KEY_4, 0, true);
-            p_key_5 = get_state_ptr(USAGE_KEY_5, 0, true);
             slots_inited = true;
         }
 
         // —— 动态分配的 state ptr（usage 改变时重新拿）——
-        static uint32_t custom_disable_usage[4] = { 0 };
-        static int32_t* p_custom_disable[4] = { nullptr };
-        static uint32_t kbd_slot_usage[4] = { 0 };
-        static int32_t* p_kbd_slot[4] = { nullptr };
-        static uint8_t  kbd_slot_gun[4] = { 0 };
+        static uint32_t custom_disable_usage[NUM_CUSTOM_DISABLE] = { 0 };
+        static int32_t* p_custom_disable[NUM_CUSTOM_DISABLE]     = { nullptr };
+        static uint32_t kbd_slot_keycode[NUM_KBD_SLOTS] = { 0 };  // 低 16 位 keycode
+        static int32_t* p_kbd_slot[NUM_KBD_SLOTS]       = { nullptr };
+        static uint8_t  kbd_slot_gun[NUM_KBD_SLOTS]     = { 0 };
 
         // —— 扫 reverse_mapping，一次性拿出所有相关 register ——
         uint16_t gun_cfg[NUM_GUNS] = { 0 };
-        uint32_t custom_disable_now[4] = { 0 };
-        uint32_t kbd_slot_usage_now[4] = { 0 };
-        uint8_t  kbd_slot_gun_now[4]   = { 0 };
+        uint32_t custom_disable_now[NUM_CUSTOM_DISABLE] = { 0 };
+        uint32_t kbd_slot_keycode_now[NUM_KBD_SLOTS] = { 0 };
+        uint8_t  kbd_slot_gun_now[NUM_KBD_SLOTS]     = { 0 };
         int32_t  scale_now = 1000;
 
         for (auto const& rev_map : reverse_mapping) {
@@ -3235,33 +3230,47 @@ void process_mapping(bool auto_repeat) {
                 scale_now = (v > 0) ? v : 1000;
             } else if (reg >= 0x0010 && reg < (0x0010 + NUM_GUNS)) {
                 gun_cfg[reg - 0x0010] = (uint16_t)(v < 0 ? 0 : v);
-            } else if (reg >= 0x0020 && reg < 0x0024) {
+            } else if (reg >= 0x0020 && reg < (0x0020 + NUM_CUSTOM_DISABLE)) {
                 custom_disable_now[reg - 0x0020] = (uint32_t)(v < 0 ? 0 : v);
-            } else if (reg >= 0x0024 && reg < 0x002C) {
-                uint8_t idx = (reg - 0x0024) >> 1;
-                if (((reg - 0x0024) & 1) == 0) {
-                    kbd_slot_usage_now[idx] = (uint32_t)(v < 0 ? 0 : v);
+            } else if (reg >= 0x0030 && reg < (0x0030 + NUM_KBD_SLOTS)) {
+                // 编码：((gun_index+1) << 16) | keycode_lo
+                uint8_t idx = reg - 0x0030;
+                int32_t s = v;
+                if (s <= 0) {
+                    kbd_slot_keycode_now[idx] = 0;
+                    kbd_slot_gun_now[idx]     = 0;
                 } else {
-                    int32_t g = v;
-                    if (g < 0)        g = 0;
-                    if (g >= NUM_GUNS) g = NUM_GUNS - 1;
-                    kbd_slot_gun_now[idx] = (uint8_t)g;
+                    int32_t gun_plus1 = (s >> 16) & 0xFF;
+                    int32_t code_lo   = s & 0xFFFF;
+                    if (gun_plus1 < 1 || gun_plus1 > NUM_GUNS) {
+                        kbd_slot_keycode_now[idx] = 0;
+                        kbd_slot_gun_now[idx]     = 0;
+                    } else {
+                        kbd_slot_keycode_now[idx] = (uint32_t)code_lo;
+                        kbd_slot_gun_now[idx]     = (uint8_t)(gun_plus1 - 1);
+                    }
                 }
             }
         }
 
         // —— 自定义按键 usage 有变化时重新 get_state_ptr ——
-        for (uint8_t i = 0; i < 4; i++) {
+        for (uint8_t i = 0; i < NUM_CUSTOM_DISABLE; i++) {
             if (custom_disable_usage[i] != custom_disable_now[i]) {
                 custom_disable_usage[i] = custom_disable_now[i];
                 p_custom_disable[i] = (custom_disable_now[i] != 0)
                     ? get_state_ptr(custom_disable_now[i], 0, true)
                     : nullptr;
             }
-            if (kbd_slot_usage[i] != kbd_slot_usage_now[i]) {
-                kbd_slot_usage[i] = kbd_slot_usage_now[i];
-                p_kbd_slot[i] = (kbd_slot_usage_now[i] != 0)
-                    ? get_state_ptr(kbd_slot_usage_now[i], 0, true)
+        }
+        for (uint8_t i = 0; i < NUM_KBD_SLOTS; i++) {
+            if (kbd_slot_keycode[i] != kbd_slot_keycode_now[i]) {
+                kbd_slot_keycode[i] = kbd_slot_keycode_now[i];
+                // 键盘装弹键的完整 usage：keycode 是低 16 位，加上键盘页 0x00070000
+                uint32_t full_usage = (kbd_slot_keycode_now[i] != 0)
+                    ? (0x00070000u | (kbd_slot_keycode_now[i] & 0xFFFF))
+                    : 0;
+                p_kbd_slot[i] = (full_usage != 0)
+                    ? get_state_ptr(full_usage, 0, true)
                     : nullptr;
             }
             kbd_slot_gun[i] = kbd_slot_gun_now[i];
@@ -3288,10 +3297,9 @@ void process_mapping(bool auto_repeat) {
 
         // —— 上一帧按键状态 ——
         static bool prev_l = false;
-        static bool prev_btns[NUM_SIDE_BTNS]    = { false };
-        static bool prev_custom_disable[4]      = { false };
-        static bool prev_kbd_slot[4]            = { false };
-        static bool prev_key_3 = false, prev_key_4 = false, prev_key_5 = false;
+        static bool prev_btns[NUM_SIDE_BTNS]                  = { false };
+        static bool prev_custom_disable[NUM_CUSTOM_DISABLE]   = { false };
+        static bool prev_kbd_slot[NUM_KBD_SLOTS]              = { false };
 
         // —— 每个侧键的双击窗口戳 ——
         static uint64_t last_btn_edge_frame[NUM_SIDE_BTNS] = { 0 };
@@ -3307,12 +3315,6 @@ void process_mapping(bool auto_repeat) {
             edges_btns[i] = btns_now[i] && !prev_btns[i];
         }
         bool edge_l     = btn_l && !prev_l;
-        bool key_3      = p_key_3 && (*p_key_3 != 0);
-        bool key_4      = p_key_4 && (*p_key_4 != 0);
-        bool key_5      = p_key_5 && (*p_key_5 != 0);
-        bool edge_key_3 = key_3 && !prev_key_3;
-        bool edge_key_4 = key_4 && !prev_key_4;
-        bool edge_key_5 = key_5 && !prev_key_5;
 
         bool has_x = our_usages_flat.count(USAGE_X) > 0;
         bool has_y = our_usages_flat.count(USAGE_Y) > 0;
@@ -3375,21 +3377,17 @@ void process_mapping(bool auto_repeat) {
         }
 
         // —— 键盘装弹槽：边沿 → 装枪 ——
-        for (uint8_t i = 0; i < 4; i++) {
+        for (uint8_t i = 0; i < NUM_KBD_SLOTS; i++) {
             bool now  = p_kbd_slot[i] && (*p_kbd_slot[i] != 0);
             bool edge = now && !prev_kbd_slot[i];
-            if (edge && kbd_slot_usage[i] != 0) {
+            if (edge && kbd_slot_keycode[i] != 0) {
                 armed = (int8_t)kbd_slot_gun[i];
             }
             prev_kbd_slot[i] = now;
         }
 
-        // —— 关闭压枪：硬编码 3 / 4 / 5 ——
-        if (edge_key_3 || edge_key_4 || edge_key_5) {
-            trigger_unload();
-        }
-        // —— 关闭压枪：4 个自定义键 ——
-        for (uint8_t i = 0; i < 4; i++) {
+        // —— 关闭压枪：7 个自定义键（已移除 3 / 4 / 5 硬接）——
+        for (uint8_t i = 0; i < NUM_CUSTOM_DISABLE; i++) {
             bool now  = p_custom_disable[i] && (*p_custom_disable[i] != 0);
             bool edge = now && !prev_custom_disable[i];
             if (edge && custom_disable_usage[i] != 0) {
@@ -3496,9 +3494,6 @@ void process_mapping(bool auto_repeat) {
 
         prev_l = btn_l;
         for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) prev_btns[i] = btns_now[i];
-        prev_key_3 = key_3;
-        prev_key_4 = key_4;
-        prev_key_5 = key_5;
     }
     // ============================================================
     // 反向键自动补点（Counter-Strafe）+ 跳投 + Space大跳
@@ -3516,9 +3511,14 @@ void process_mapping(bool auto_repeat) {
     //   松开 S+D → W+A 持续 delay_SD ms                (         0xFFF50009)
     //
     // 跳投（delay_JT > 0 且 jt_key_usage != 0 时启用）：
-    //   按下 JT 触发键 → 报文里"按下"Space（CS2 起跳）
-    //   delay_JT ms 后 → 同时清零左键和右键 bit
-    //   抑制解除条件：物理左键和物理右键都松开（或抑制上限 500ms）
+    //   单键 N 触发，状态机式（不依赖按住时长）：
+    //     IDLE  ──按下边沿──▶ SPACE_ONLY (delay_JT ms，只按 Space)
+    //                       ──▶ SPACE_AND_RELEASE (Space 继续按住 + 松开 L/R)
+    //                       ──▶ IDLE   (用户松开 L+R 且 ≥ 50ms 额外保持时间到，硬上限 500ms)
+    //   * Space 总按下时长 ≥ delay_JT + 50ms，远高于 CS2 一帧采样窗口，必中起跳
+    //   * 进入 SPACE_AND_RELEASE 时 Space 已经被按了 delay_JT 整段，再开始释放鼠标
+    //     —— 这才是 CS2 跳投的正确时序
+    //   * 整段序列一旦开始就不会中途取消（即使用户立即松开 N 也会执行完）
     //   触发键 HID usage 由 Register 0xFFF5000B 配置（0=禁用）
     //   延迟由 Register 0xFFF5000A 配置（ms）
     //
@@ -3537,7 +3537,8 @@ void process_mapping(bool auto_repeat) {
         constexpr uint32_t USAGE_BTN_LEFT  = 0x00090001;
         constexpr uint32_t USAGE_BTN_RIGHT = 0x00090002;
 
-        constexpr uint16_t JT_SUPPRESS_LIMIT_MS = 500;
+        constexpr uint16_t JT_RELEASE_MAX_MS    = 500;   // SPACE_AND_RELEASE 阶段硬上限
+        constexpr uint16_t JT_SPACE_AFTER_MS    = 50;    // 进入 RELEASE 后 Space 至少再保持 ms
         constexpr int32_t  DELAY_MAX_MS         = 1000;
 
         // —— 静态指针 ——
@@ -3579,8 +3580,16 @@ void process_mapping(bool auto_repeat) {
         static uint16_t inj_W_ms = 0;
         static uint16_t inj_S_ms = 0;
 
-        static uint16_t jt_pre_ms      = 0;
-        static uint16_t jt_suppress_ms = 0;
+        // —— 跳投状态机 ——
+        enum JtPhase : uint8_t {
+            JT_IDLE          = 0,
+            JT_SPACE_ONLY    = 1,   // Space 已按，倒计时 delay_JT
+            JT_RELEASE_PHASE = 2,   // Space 继续按 + L/R 已松开
+        };
+        static uint8_t  jt_phase            = JT_IDLE;
+        static uint16_t jt_space_only_ms    = 0;   // SPACE_ONLY 剩余 ms
+        static uint16_t jt_space_after_ms   = 0;   // 进 RELEASE 后 Space 最少再按 ms
+        static uint16_t jt_release_left_ms  = 0;   // RELEASE 阶段剩余 ms（硬上限）
 
         // —— 一次性扫 reverse_mapping ——
         int32_t delay_A = 0, delay_D = 0, delay_W = 0, delay_S = 0;
@@ -3648,15 +3657,13 @@ void process_mapping(bool auto_repeat) {
         if (delay_W > 0 && prev_w_cs && !w_held && !s_held && !covered_release_W) inj_S_ms = delay_W;
         if (delay_S > 0 && prev_s_cs && !s_held && !w_held && !covered_release_S) inj_W_ms = delay_S;
 
-        // —— JT 边沿启动倒计时 ——
-        if (delay_JT > 0 && jt_held && !prev_jt) {
-            jt_pre_ms = (uint16_t)delay_JT;
-        }
-        if (jt_pre_ms > 0) {
-            jt_pre_ms--;
-            if (jt_pre_ms == 0) {
-                jt_suppress_ms = JT_SUPPRESS_LIMIT_MS;
-            }
+        // —— JT 状态机：边沿启动 ——
+        // 只有 IDLE 状态下才接受新的边沿；进入序列后不会被中途取消
+        if (delay_JT > 0 && jt_key_now != 0 && jt_held && !prev_jt && jt_phase == JT_IDLE) {
+            jt_phase           = JT_SPACE_ONLY;
+            jt_space_only_ms   = (uint16_t)delay_JT;
+            jt_space_after_ms  = JT_SPACE_AFTER_MS;
+            jt_release_left_ms = JT_RELEASE_MAX_MS;
         }
 
         // —— reports 操作辅助 ——
@@ -3734,16 +3741,40 @@ void process_mapping(bool auto_repeat) {
         tick_inject(inj_W_ms, USAGE_KEY_W, w_held);
         tick_inject(inj_S_ms, USAGE_KEY_S, s_held);
 
-        // —— JT 按住期间持续注入 Space（CS2 起跳）——
-        if (jt_held || jt_pre_ms > 0 || jt_suppress_ms > 0) {
+        // —— JT 状态机：每帧推进 ——
+        // 关键时序：先按 Space 满 delay_JT ms，然后才开始松开 L/R；
+        // Space 在 RELEASE 阶段继续按住至少 JT_SPACE_AFTER_MS，
+        // 整段 Space 持续 ≥ delay_JT + JT_SPACE_AFTER_MS，CS2 必然起跳。
+        if (jt_phase == JT_SPACE_ONLY) {
             press_in_report(USAGE_KEY_SPACE);
-        }
-        // —— JT 抑制 L+R ——
-        if (jt_suppress_ms > 0) {
+            if (jt_space_only_ms > 0) {
+                jt_space_only_ms--;
+            }
+            if (jt_space_only_ms == 0) {
+                jt_phase = JT_RELEASE_PHASE;
+                // jt_space_after_ms 和 jt_release_left_ms 已在边沿处初始化
+            }
+        } else if (jt_phase == JT_RELEASE_PHASE) {
+            // Space 继续按住
+            if (jt_space_after_ms > 0) {
+                press_in_report(USAGE_KEY_SPACE);
+                jt_space_after_ms--;
+            }
+            // 松开 L+R（覆盖用户当前可能按住的状态）
             release_in_report(USAGE_BTN_LEFT);
             release_in_report(USAGE_BTN_RIGHT);
-            jt_suppress_ms--;
-            if (!l_held && !r_held) jt_suppress_ms = 0;
+            if (jt_release_left_ms > 0) {
+                jt_release_left_ms--;
+            }
+            // 退出条件：Space 最少保持时间到 + 用户已松开 L+R，或硬上限
+            bool min_space_done = (jt_space_after_ms == 0);
+            bool user_released  = (!l_held && !r_held);
+            bool hard_cap       = (jt_release_left_ms == 0);
+            if ((min_space_done && user_released) || hard_cap) {
+                jt_phase           = JT_IDLE;
+                jt_space_after_ms  = 0;
+                jt_release_left_ms = 0;
+            }
         }
 
         // —— Space 大跳 combo：物理 Space 按住时同帧注入 Left Ctrl ——
