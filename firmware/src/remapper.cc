@@ -3152,11 +3152,16 @@ void process_mapping(bool auto_repeat) {
     //
     // 数据源（mapping.scaling 字段绕开 register 整数除法陷阱）：
     //   Register 0xFFF50001        灵敏度倍率 (×1000)
+    //   Register 0xFFF5000D        鼠标回正帧数（0 = 用内置默认 120，范围 1..500）
     //   Register 0xFFF50010..001F  16 把枪触发配置
     //                              0       = 关闭
     //                              其它    = (trig_type << 8) | btn_offset
     //                              trig_type: 1=单击 2=双击 3=Ctrl+单击 4=Ctrl+双击
+    //                                         5=按住+滚轮上 6=按住+滚轮下
     //                              btn_offset: 3..8 对应 B3(中键)..B8
+    //                              注意：trig 5/6 检测 (按住 btn_offset 那个键 + 当帧滚轮非零)
+    //                                    选 B3 + 5/6 = "按下滚轮 + 同时往上/往下滚一格"
+    //                                    选 B4..B8 + 5/6 = "按住侧键 + 滚轮上/下"，滚轮无需按下
     //   Register 0xFFF50020..0026  7 个自定义"关闭压枪"键 HID usage
     //   Register 0xFFF50030..0033  4 个键盘装弹槽
     //                              0 = 关闭
@@ -3173,11 +3178,14 @@ void process_mapping(bool auto_repeat) {
     {
         constexpr uint32_t USAGE_X         = 0x00010030;
         constexpr uint32_t USAGE_Y         = 0x00010031;
+        constexpr uint32_t USAGE_WHEEL     = 0x00010038;   // 垂直滚轮（与 V_SCROLL_USAGE 一致）
         constexpr uint32_t USAGE_BTN_L     = 0x00090001;
         constexpr uint32_t USAGE_KEY_LCTRL = 0x000700E0;
         constexpr uint32_t USAGE_KEY_RCTRL = 0x000700E4;
 
-        constexpr uint16_t RETURN_TOTAL_FRAMES = 120;
+        constexpr uint16_t RETURN_FRAMES_DEFAULT = 120;
+        constexpr uint16_t RETURN_FRAMES_MIN     = 1;
+        constexpr uint16_t RETURN_FRAMES_MAX     = 500;
         constexpr uint64_t DOUBLE_CLICK_WINDOW = 350;
         constexpr uint8_t  NUM_GUNS = 16;
         constexpr uint8_t  NUM_SIDE_BTNS = 6;   // B3(中键) / B4 / B5 / B6 / B7 / B8
@@ -3190,12 +3198,15 @@ void process_mapping(bool auto_repeat) {
         constexpr uint8_t TRIG_DOUBLE      = 2;
         constexpr uint8_t TRIG_CTRL_SINGLE = 3;
         constexpr uint8_t TRIG_CTRL_DOUBLE = 4;
+        constexpr uint8_t TRIG_WHEEL_UP    = 5;     // 按住 btn + 滚轮上
+        constexpr uint8_t TRIG_WHEEL_DOWN  = 6;     // 按住 btn + 滚轮下
 
         // —— 静态状态槽指针 ——
         static int32_t* p_btn_l = nullptr;
         static int32_t* p_btns[NUM_SIDE_BTNS] = { nullptr };   // B3..B8
         static int32_t* p_lctrl = nullptr;
         static int32_t* p_rctrl = nullptr;
+        static int32_t* p_wheel = nullptr;                     // 垂直滚轮（相对量）
         static bool slots_inited = false;
         if (!slots_inited) {
             p_btn_l = get_state_ptr(USAGE_BTN_L, 0, true);
@@ -3204,6 +3215,7 @@ void process_mapping(bool auto_repeat) {
             }
             p_lctrl = get_state_ptr(USAGE_KEY_LCTRL, 0, true);
             p_rctrl = get_state_ptr(USAGE_KEY_RCTRL, 0, true);
+            p_wheel = get_state_ptr(USAGE_WHEEL,    0, true);
             slots_inited = true;
         }
 
@@ -3220,6 +3232,7 @@ void process_mapping(bool auto_repeat) {
         uint32_t kbd_slot_keycode_now[NUM_KBD_SLOTS] = { 0 };
         uint8_t  kbd_slot_gun_now[NUM_KBD_SLOTS]     = { 0 };
         int32_t  scale_now = 1000;
+        uint16_t return_frames_now = RETURN_FRAMES_DEFAULT;
 
         for (auto const& rev_map : reverse_mapping) {
             if ((rev_map.target & 0xFFFF0000) != REGISTER_USAGE_PAGE) continue;
@@ -3228,6 +3241,17 @@ void process_mapping(bool auto_repeat) {
             int32_t  v   = rev_map.sources[0].scaling;
             if (reg == 0x0001) {
                 scale_now = (v > 0) ? v : 1000;
+            } else if (reg == 0x000D) {
+                // 鼠标回正帧数：0 = 用默认值；超出范围则夹紧
+                if (v <= 0) {
+                    return_frames_now = RETURN_FRAMES_DEFAULT;
+                } else if (v < (int32_t)RETURN_FRAMES_MIN) {
+                    return_frames_now = RETURN_FRAMES_MIN;
+                } else if (v > (int32_t)RETURN_FRAMES_MAX) {
+                    return_frames_now = RETURN_FRAMES_MAX;
+                } else {
+                    return_frames_now = (uint16_t)v;
+                }
             } else if (reg >= 0x0010 && reg < (0x0010 + NUM_GUNS)) {
                 gun_cfg[reg - 0x0010] = (uint16_t)(v < 0 ? 0 : v);
             } else if (reg >= 0x0020 && reg < (0x0020 + NUM_CUSTOM_DISABLE)) {
@@ -3326,7 +3350,7 @@ void process_mapping(bool auto_repeat) {
         auto start_return = [&]() {
             if (backx_milli != 0 || backy_milli != 0) {
                 returning = true;
-                ret_frames_left = RETURN_TOTAL_FRAMES;
+                ret_frames_left = return_frames_now;
             } else {
                 clear_subpixel_residue();
             }
@@ -3374,6 +3398,30 @@ void process_mapping(bool auto_repeat) {
             else           trig_type = is_double ? TRIG_DOUBLE      : TRIG_SINGLE;
             int8_t g = find_gun_for_event(btn_offset, trig_type);
             if (g >= 0) armed = g;
+        }
+
+        // —— 滚轮触发：按住 btn + 当帧滚轮非零 ——
+        // 适用的 trig_type：
+        //   TRIG_WHEEL_UP   = 按住 btn_offset 那个键 + 滚轮往上
+        //   TRIG_WHEEL_DOWN = 按住 btn_offset 那个键 + 滚轮往下
+        // btn_offset=3 选项 (B3 中键) 等价于"按下滚轮 + 同时滚一格"，因为按下滚轮就是 B3。
+        // 滚轮 input_state 在本函数末尾才会被清零（见 relative_usages），所以这里读到的是
+        // 当前帧的滚动 delta；handle_scroll 早些时候已经基于这个值产生了透传滚动报告，
+        // 我们只是"再观察一眼"，不消费这个值，不影响游戏内滚轮原本的操作。
+        {
+            int32_t wheel_now = (p_wheel != nullptr) ? *p_wheel : 0;
+            if (wheel_now != 0) {
+                uint8_t wheel_trig = (wheel_now > 0) ? TRIG_WHEEL_UP : TRIG_WHEEL_DOWN;
+                for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) {
+                    if (!btns_now[i]) continue;        // 必须按住该键
+                    uint8_t btn_offset = 3 + i;
+                    int8_t g = find_gun_for_event(btn_offset, wheel_trig);
+                    if (g >= 0) {
+                        armed = g;
+                        break;
+                    }
+                }
+            }
         }
 
         // —— 键盘装弹槽：边沿 → 装枪 ——
