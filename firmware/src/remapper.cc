@@ -118,6 +118,14 @@ uint8_t port_register = 0;
 
 uint64_t frame_counter = 0;
 // ============================================================
+// GSI 自动装弹（CS2 Game State Integration）
+//   Bridge 程序通过 Feature Report 命令 26 写入这两个变量。
+//   seq 每写一次自增，arming 逻辑通过对比 seq 变化检测新事件，
+//   同一把枪连续切换两次也能正确触发刷新。
+// ============================================================
+volatile int8_t   g_auto_armed     = -1;   // -1 = 卸弹；0..15 = gun index
+volatile uint32_t g_auto_armed_seq = 0;    // bridge 每次写都 ++
+// ============================================================
 // 后坐力宏：弹道表（移植自 CH32 main.c）
 // 放在 remapper.cc 文件作用域，建议靠近 frame_counter 定义附近
 // ============================================================
@@ -3469,7 +3477,18 @@ void process_mapping(bool auto_repeat) {
             }
             prev_custom_disable[i] = now;
         }
-
+        // —— GSI 自动装弹（最高优先级，会覆盖手动 armed）——
+        static uint32_t prev_auto_armed_seq = 0;
+        uint32_t cur_seq = g_auto_armed_seq;
+        if (cur_seq != prev_auto_armed_seq) {
+            int8_t a = g_auto_armed;
+            if (a < 0) {
+                trigger_unload();                       // 切刀/手雷/其它 → 卸弹
+            } else if (a < (int8_t)NUM_GUNS) {
+                armed = a;                              // 切到对应步枪/SMG → 装弹
+            }
+            prev_auto_armed_seq = cur_seq;
+        }
         // —— 左键边沿：装弹中 → 开播 ——
         if (edge_l && armed >= 0 && !playing && !returning) {
             int32_t s = scale_now;

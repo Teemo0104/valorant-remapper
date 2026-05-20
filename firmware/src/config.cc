@@ -9,7 +9,8 @@
 #include "our_descriptor.h"
 #include "platform.h"
 #include "remapper.h"
-
+extern volatile int8_t   g_auto_armed;
+extern volatile uint32_t g_auto_armed_seq;
 const uint8_t CONFIG_VERSION = 18;
 
 const uint8_t CONFIG_FLAG_UNMAPPED_PASSTHROUGH = 0x01;
@@ -996,6 +997,15 @@ void handle_set_report1(uint8_t report_id, uint8_t const* buffer, uint16_t bufsi
                     config_mappings.push_back(*mapping_config);
                     break;
                 }
+                case ConfigCommand::SET_AUTO_ARMED: {
+                int32_t v;
+                memcpy(&v, buffer + 2, sizeof(v));
+                if (v < -1) v = -1;
+                if (v > 15) v = 15;
+                g_auto_armed = (int8_t)v;
+                g_auto_armed_seq++;
+                break;
+            }
                 case ConfigCommand::GET_MAPPING:
                 case ConfigCommand::GET_OUR_USAGES:
                 case ConfigCommand::GET_THEIR_USAGES:

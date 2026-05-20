@@ -33,7 +33,12 @@ enum class ConfigCommand : int8_t {
     ADD_QUIRK = 24,
     GET_QUIRK = 25,
 };
-
+enum class ConfigCommand : uint8_t {
+    // ...原有的...
+    ADD_MAPPING = 5,
+    // ...原有的...
+    SET_AUTO_ARMED = 26,   // ← 加这一行（数字必须是 26，跟 Python 桥保持一致）
+};
 struct usage_def_t {
     uint8_t report_id;
     uint8_t size;
