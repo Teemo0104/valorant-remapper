@@ -119,6 +119,22 @@ uint8_t const* tud_descriptor_device_cb() {
     if ((our_descriptor->vid != 0) && (our_descriptor->pid != 0)) {
         desc_device.idVendor = our_descriptor->vid;
         desc_device.idProduct = our_descriptor->pid;
+    } else {
+        // 没有 per-variant 覆盖时，按芯片唯一 ID 派生 VID/PID。
+        // 同一块板子结果稳定（重烧固件不变），不同板子结果不同。
+        uint64_t uid = get_unique_id();
+        uint32_t hi = (uint32_t) (uid >> 32);
+        uint32_t lo = (uint32_t) (uid & 0xFFFFFFFFu);
+        uint16_t v = (uint16_t) (hi ^ (hi >> 16));
+        uint16_t p = (uint16_t) (lo ^ (lo >> 16));
+        // VID 落到 0xF000~0xFFFE：USB-IF 几乎没分配过的高位段，撞真厂商概率低
+        v = 0xF000 | (v & 0x0FFF);
+        if (v == 0xFFFF) v = 0xF000;
+        // PID 落到 0x8000~0xFFFE：避开 0x0000 / 0xFFFF 边界值
+        p |= 0x8000;
+        if (p == 0xFFFF) p = 0x8000;
+        desc_device.idVendor = v;
+        desc_device.idProduct = p;
     }
     return (uint8_t const*) &desc_device;
 }
