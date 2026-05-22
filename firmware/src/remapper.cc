@@ -118,14 +118,6 @@ uint8_t port_register = 0;
 
 uint64_t frame_counter = 0;
 // ============================================================
-// GSI 自动装弹（CS2 Game State Integration）
-//   Bridge 程序通过 Feature Report 命令 26 写入这两个变量。
-//   seq 每写一次自增，arming 逻辑通过对比 seq 变化检测新事件，
-//   同一把枪连续切换两次也能正确触发刷新。
-// ============================================================
-volatile int8_t   g_auto_armed     = -1;   // -1 = 卸弹；0..15 = gun index
-volatile uint32_t g_auto_armed_seq = 0;    // bridge 每次写都 ++
-// ============================================================
 // 后坐力宏：弹道表（移植自 CH32 main.c）
 // 放在 remapper.cc 文件作用域，建议靠近 frame_counter 定义附近
 // ============================================================
@@ -1364,7 +1356,6 @@ static const TrackPoint MP9[]   = {
     {1,0,7}, {1,1,7}, {1,1,6}, {1,0,7},
     {0,1,6}, {1,1,7}, {0,0,6}, {1,1,7},
     {0,1,6}, {1,0,7}, {0,1,6}, {1,1,7}
-
  };
 static const TrackPoint P90[]   = {
     {0,0,2}, {0,0,2}, {0,0,2}, {0,0,2},
@@ -3452,18 +3443,7 @@ void process_mapping(bool auto_repeat) {
             }
             prev_custom_disable[i] = now;
         }
-        // —— GSI 自动装弹（最高优先级，会覆盖手动 armed）——
-        static uint32_t prev_auto_armed_seq = 0;
-        uint32_t cur_seq = g_auto_armed_seq;
-        if (cur_seq != prev_auto_armed_seq) {
-            int8_t a = g_auto_armed;
-            if (a < 0) {
-                trigger_unload();                       // 切刀/手雷/其它 → 卸弹
-            } else if (a < (int8_t)NUM_GUNS) {
-                armed = a;                              // 切到对应步枪/SMG → 装弹
-            }
-            prev_auto_armed_seq = cur_seq;
-        }
+
         // —— 左键边沿：装弹中 → 开播 ——
         if (edge_l && armed >= 0 && !playing && !returning) {
             int32_t s = scale_now;
@@ -3578,6 +3558,11 @@ void process_mapping(bool auto_repeat) {
     //   松开 S+A → W+D 持续 delay_SA ms                (         0xFFF50008)
     //   松开 S+D → W+A 持续 delay_SD ms                (         0xFFF50009)
     //
+    // 急停总开关键（Register 0xFFF5000E != 0 时启用 toggle 模式）：
+    //   按下该键 → 翻转 cs_toggle_enabled（每按一次切换 on/off）
+    //   启动默认 off，处于 off 时所有方向的 delay_* 被视为 0
+    //   register == 0 时退化为旧行为：8 个方向按各自 delay_X 始终生效
+    //
     // 跳投（delay_JT > 0 且 jt_key_usage != 0 时启用）：
     //   单键 N 触发，状态机式（不依赖按住时长）：
     //     IDLE  ──按下边沿──▶ SPACE_ONLY (delay_JT ms，只按 Space)
@@ -3643,6 +3628,12 @@ void process_mapping(bool auto_repeat) {
         static bool prev_s_cs  = false;
         static bool prev_jt    = false;
 
+        // —— 急停总开关 toggle ——
+        static bool      cs_toggle_enabled    = false;  // 当前是否启用急停（按键 toggle 状态）
+        static bool      prev_cs_toggle_held  = false;
+        static uint32_t  cs_toggle_key_cached = 0;
+        static int32_t*  p_cs_toggle          = nullptr;
+
         static uint16_t inj_A_ms = 0;
         static uint16_t inj_D_ms = 0;
         static uint16_t inj_W_ms = 0;
@@ -3664,6 +3655,7 @@ void process_mapping(bool auto_repeat) {
         int32_t delay_WA = 0, delay_WD = 0, delay_SA = 0, delay_SD = 0;
         int32_t delay_JT = 0;
         uint32_t jt_key_now = 0;
+        uint32_t cs_toggle_key_now = 0;
         int32_t combo_enabled = 0;
         for (auto const& rev_map : reverse_mapping) {
             if ((rev_map.target & 0xFFFF0000) != REGISTER_USAGE_PAGE) continue;
@@ -3683,6 +3675,7 @@ void process_mapping(bool auto_repeat) {
                 case 0x0A: delay_JT = v; break;
                 case 0x0B: jt_key_now = (uint32_t)v; break;
                 case 0x0C: combo_enabled = v; break;
+                case 0x0E: cs_toggle_key_now = (uint32_t)v; break;
                 default: break;
             }
         }
@@ -3702,6 +3695,29 @@ void process_mapping(bool auto_repeat) {
             p_jt = (jt_key_now != 0) ? get_state_ptr(jt_key_now, 0, true) : nullptr;
         }
         bool jt_held = p_jt && (*p_jt != 0);
+
+        // —— 急停总开关键：edge-triggered toggle ——
+        //   key=0      → 急停按各方向 delay_X 原样工作（向后兼容）
+        //   key!=0     → 每次按下翻转 cs_toggle_enabled；启动默认 false（关闭）
+        //   key 变更   → 强制重置 toggle 为 false，避免新键继承旧状态
+        if (cs_toggle_key_cached != cs_toggle_key_now) {
+            cs_toggle_key_cached = cs_toggle_key_now;
+            p_cs_toggle = (cs_toggle_key_now != 0) ? get_state_ptr(cs_toggle_key_now, 0, true) : nullptr;
+            cs_toggle_enabled   = false;
+            prev_cs_toggle_held = false;
+        }
+        if (cs_toggle_key_now != 0) {
+            bool cs_toggle_held = p_cs_toggle && (*p_cs_toggle != 0);
+            if (cs_toggle_held && !prev_cs_toggle_held) {
+                cs_toggle_enabled = !cs_toggle_enabled;
+            }
+            prev_cs_toggle_held = cs_toggle_held;
+            // 关闭态：把所有方向的延迟当作 0，下方所有触发判定自动失活
+            if (!cs_toggle_enabled) {
+                delay_A = delay_D = delay_W = delay_S = 0;
+                delay_WA = delay_WD = delay_SA = delay_SD = 0;
+            }
+        }
 
         // —— 对角线触发 ——
         bool diag_WA = (delay_WA > 0) && prev_w_cs && prev_a_cs && !w_held && !a_held;
