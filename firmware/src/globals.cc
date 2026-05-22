@@ -54,3 +54,8 @@ bool boot_protocol_keyboard = false;
 bool boot_protocol_updated = false;
 
 volatile PersistConfigReturnCode persist_config_return_code = PersistConfigReturnCode::UNKNOWN;
+
+// 自动压枪选枪：-1 = 关闭（手动模式）；0..15 = 强制锁定为该枪
+// _seq 在每次变更时自增，供其他核 / 主循环检测变更
+volatile int8_t   g_auto_armed     = -1;
+volatile uint32_t g_auto_armed_seq = 0;

@@ -9,8 +9,7 @@
 #include "our_descriptor.h"
 #include "platform.h"
 #include "remapper.h"
-extern volatile int8_t   g_auto_armed;
-extern volatile uint32_t g_auto_armed_seq;
+
 const uint8_t CONFIG_VERSION = 18;
 
 const uint8_t CONFIG_FLAG_UNMAPPED_PASSTHROUGH = 0x01;

@@ -69,4 +69,8 @@ extern bool boot_protocol_updated;
 
 extern volatile PersistConfigReturnCode persist_config_return_code;
 
+// 自动压枪选枪：-1 = 关闭；0..15 = 强制锁定为该枪
+extern volatile int8_t   g_auto_armed;
+extern volatile uint32_t g_auto_armed_seq;
+
 #endif
