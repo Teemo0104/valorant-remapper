@@ -30,7 +30,7 @@ endif()
 
 add_executable(remapper
     src/main.cc
-    src/remapper_manual.cc
+    src/remapper.cc
     src/remapper_single.cc
     src/crc.cc
     src/descriptor_parser.cc
@@ -87,7 +87,7 @@ pico_add_extra_outputs(remapper)
 
 add_executable(remapper_auto
     src/main.cc
-    src/remapper_auto.cc
+    src/remapper.cc
     src/remapper_single.cc
     src/crc.cc
     src/descriptor_parser.cc
