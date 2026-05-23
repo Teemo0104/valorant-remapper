@@ -10,6 +10,7 @@ CS2 GSI -> 固件 自动装弹桥接（Python 版）
     python gsi_armed_bridge.py
 """
 
+import atexit
 import hid
 import json
 import threading
@@ -193,6 +194,16 @@ def set_armed(value):
         print(f"[arm] {label}")
 
 
+# ====== 心跳线程：定期发送当前状态，让固件知道脚本还活着 ======
+def heartbeat_loop():
+    while True:
+        time.sleep(0.5)          # 500ms 发一次心跳
+        with _last_lock:
+            v = _last_armed
+        if v != -2:              # 已经初始化过才发
+            send_armed(v)
+
+
 # ====== HTTP（GSI 推送）======
 class GsiHandler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -262,11 +273,22 @@ def reconnect_loop():
         time.sleep(3)
 
 
+def _on_exit():
+    """脚本退出时强制卸弹"""
+    print("[exit] sending DISARM...")
+    set_armed(-1)
+    time.sleep(0.2)  # 给 HID 写入留一点时间
+
+
 def main():
     open_device()
+    atexit.register(_on_exit)
 
     t = threading.Thread(target=reconnect_loop, daemon=True)
     t.start()
+
+    hb = threading.Thread(target=heartbeat_loop, daemon=True)
+    hb.start()
 
     server = HTTPServer(('127.0.0.1', HTTP_PORT), GsiHandler)
     print(f"[gsi] listening on http://127.0.0.1:{HTTP_PORT}/")
@@ -274,6 +296,7 @@ def main():
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n[bye]")
+    finally:
         server.shutdown()
 
 
