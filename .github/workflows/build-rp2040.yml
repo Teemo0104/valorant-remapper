@@ -39,4 +39,4 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-rp2040
-          path: artifacts/remapper_feather.uf2
+          path: artifacts/*.uf2
