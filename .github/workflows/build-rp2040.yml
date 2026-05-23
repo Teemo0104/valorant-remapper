@@ -1,4 +1,4 @@
-name: build-rp2040
+name: build-rp2040-manual
 
 on:
   push:
@@ -28,7 +28,7 @@ jobs:
       - name: Show source fingerprints
         working-directory: firmware
         run: |
-          echo "=== remapper_auto.cc / remapper_manual.cc / remapper.cc 哈希 ==="
+          echo "=== remapper.cc 哈希 ==="
           sha256sum src/remapper.cc || true
           echo "=== CMakeLists.txt 哈希 ==="
           sha256sum CMakeLists.txt
@@ -50,40 +50,29 @@ jobs:
         run: |
           make -j$(nproc) remapper
 
-      - name: Build remapper_auto
+      - name: Verify artifact exists
         working-directory: firmware/build-feather
         run: |
-          # 源码与 remapper 相同，但单独 make 编译出的二进制有差异且无法被识别。
-          # 直接复制 remapper 输出，确保两个固件完全一致。
-          cp remapper.elf remapper_auto.elf
-          cp remapper.uf2 remapper_auto.uf2
-
-      - name: Verify both artifacts exist
-        working-directory: firmware/build-feather
-        run: |
-          ls -la remapper.uf2 remapper_auto.uf2
+          ls -la remapper.uf2
           echo "=== UF2 大小 ==="
-          stat -c '%n %s bytes' remapper.uf2 remapper_auto.uf2
+          stat -c '%n %s bytes' remapper.uf2
           echo "=== UF2 SHA256 ==="
-          sha256sum remapper.uf2 remapper_auto.uf2
+          sha256sum remapper.uf2
           echo "=== ELF 体积（rodata/text/bss/data） ==="
-          arm-none-eabi-size remapper.elf remapper_auto.elf || true
+          arm-none-eabi-size remapper.elf || true
           echo "=== 时间戳 ==="
-          stat -c '%n  %y' remapper.elf remapper_auto.elf remapper.uf2 remapper_auto.uf2
+          stat -c '%n  %y' remapper.elf remapper.uf2
 
       - name: Collect artifacts
         working-directory: firmware/build-feather
         run: |
           mkdir -p ../../artifacts
           cp remapper.uf2       ../../artifacts/remapper_feather.uf2
-          cp remapper_auto.uf2  ../../artifacts/remapper_auto_feather.uf2
-          # 留一份带 SHA 后缀的 elf，方便事后 addr2line 分析 hard fault
-          cp remapper_auto.elf  ../../artifacts/remapper_auto_feather.elf
           cp remapper.elf       ../../artifacts/remapper_feather.elf
           echo "=== 最终 artifacts ==="
           sha256sum ../../artifacts/*
 
       - uses: actions/upload-artifact@v4
         with:
-          name: firmware-rp2040
+          name: firmware-rp2040-manual
           path: artifacts/*

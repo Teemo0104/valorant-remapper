@@ -3450,18 +3450,7 @@ void process_mapping(bool auto_repeat) {
             }
             prev_custom_disable[i] = now;
         }
-        // —— GSI 自动装弹（最高优先级，会覆盖手动 armed）——
-        static uint32_t prev_auto_armed_seq = 0;
-        uint32_t cur_seq = g_auto_armed_seq;
-        if (cur_seq != prev_auto_armed_seq) {
-            int8_t a = g_auto_armed;
-            if (a < 0) {
-                trigger_unload();                       // 切刀/手雷/其它 → 卸弹
-            } else if (a < (int8_t)NUM_GUNS) {
-                armed = a;                              // 切到对应步枪/SMG → 装弹
-            }
-            prev_auto_armed_seq = cur_seq;
-        }
+        // —— GSI 自动装弹已移除（手动版固件）——
         // —— 左键边沿：装弹中 → 开播 ——
         if (edge_l && armed >= 0 && !playing && !returning) {
             int32_t s = scale_now;
