@@ -25,18 +25,66 @@ jobs:
           sudo apt install -y --no-install-recommends \
             gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib srecord
 
-      - name: Build feather only
+      - name: Show source fingerprints
         working-directory: firmware
         run: |
+          echo "=== remapper_auto.cc / remapper_manual.cc / remapper.cc 哈希 ==="
+          sha256sum src/remapper_auto.cc src/remapper_manual.cc src/remapper.cc || true
+          echo "=== CMakeLists.txt 哈希 ==="
+          sha256sum CMakeLists.txt
+          wc -l src/remapper_auto.cc src/remapper_manual.cc src/remapper.cc
+
+      - name: Clean build (no cache)
+        working-directory: firmware
+        run: |
+          rm -rf build-feather
           mkdir build-feather
-          cd build-feather
+
+      - name: Configure
+        working-directory: firmware/build-feather
+        run: |
           PICO_BOARD=feather_host cmake ..
-          make -j$(nproc)
+
+      - name: Build remapper (manual)
+        working-directory: firmware/build-feather
+        run: |
+          make -j$(nproc) remapper
+
+      - name: Build remapper_auto
+        working-directory: firmware/build-feather
+        run: |
+          make -j$(nproc) remapper_auto
+
+      - name: Verify both artifacts exist and differ
+        working-directory: firmware/build-feather
+        run: |
+          ls -la remapper.uf2 remapper_auto.uf2
+          echo "=== UF2 大小 ==="
+          stat -c '%n %s bytes' remapper.uf2 remapper_auto.uf2
+          echo "=== UF2 SHA256 ==="
+          sha256sum remapper.uf2 remapper_auto.uf2
+          if cmp -s remapper.uf2 remapper_auto.uf2; then
+            echo "FATAL: remapper.uf2 和 remapper_auto.uf2 居然一模一样！"
+            exit 1
+          fi
+          echo "=== ELF 体积（rodata/text/bss/data） ==="
+          arm-none-eabi-size remapper.elf remapper_auto.elf || true
+          echo "=== 时间戳 ==="
+          stat -c '%n  %y' remapper.elf remapper_auto.elf remapper.uf2 remapper_auto.uf2
+
+      - name: Collect artifacts
+        working-directory: firmware/build-feather
+        run: |
           mkdir -p ../../artifacts
-          cp remapper.uf2 ../../artifacts/remapper_feather.uf2
-          cp remapper_auto.uf2 ../../artifacts/remapper_auto_feather.uf2
+          cp remapper.uf2       ../../artifacts/remapper_feather.uf2
+          cp remapper_auto.uf2  ../../artifacts/remapper_auto_feather.uf2
+          # 留一份带 SHA 后缀的 elf，方便事后 addr2line 分析 hard fault
+          cp remapper_auto.elf  ../../artifacts/remapper_auto_feather.elf
+          cp remapper.elf       ../../artifacts/remapper_feather.elf
+          echo "=== 最终 artifacts ==="
+          sha256sum ../../artifacts/*
 
       - uses: actions/upload-artifact@v4
         with:
           name: firmware-rp2040
-          path: artifacts/*.uf2
+          path: artifacts/*
