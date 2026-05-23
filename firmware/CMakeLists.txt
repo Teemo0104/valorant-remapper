@@ -30,7 +30,7 @@ endif()
 
 add_executable(remapper
     src/main.cc
-    src/remapper.cc
+    src/remapper_manual.cc
     src/remapper_single.cc
     src/crc.cc
     src/descriptor_parser.cc
@@ -85,6 +85,62 @@ else()
 endif()
 pico_add_extra_outputs(remapper)
 
+add_executable(remapper_auto
+    src/main.cc
+    src/remapper_auto.cc
+    src/remapper_single.cc
+    src/crc.cc
+    src/descriptor_parser.cc
+    src/tinyusb_stuff.cc
+    src/our_descriptor.cc
+    src/globals.cc
+    src/config.cc
+    src/quirks.cc
+    src/interval_override.cc
+    src/out_report.cc
+    src/tick.cc
+    src/activity_led.cc
+    src/ps_auth.cc
+    src/app_driver.cc
+    src/xbox.cc
+)
+
+if((PICO_BOARD STREQUAL "pico") OR (PICO_BOARD STREQUAL "pico2"))
+target_compile_definitions(remapper_auto PUBLIC PICO_DEFAULT_UART_TX_PIN=16)
+target_compile_definitions(remapper_auto PUBLIC PICO_DEFAULT_UART_RX_PIN=17)
+target_compile_definitions(remapper_auto PUBLIC PICO_DEFAULT_PIO_USB_DP_PIN=0)
+endif()
+
+target_include_directories(remapper_auto PRIVATE
+    src
+    src/tusb_config_both
+    ${PICO_PIO_USB_PATH}
+)
+
+target_link_libraries(remapper_auto
+    pico_stdlib
+    pico_multicore
+    pico_unique_id
+    hardware_pio
+    hardware_dma
+    hardware_flash
+    $<$<STREQUAL:${PICO_BOARD},remapper_v8>:hardware_adc>
+    tinyusb_device
+    tinyusb_host
+    tinyusb_board
+    tinyusb_pico_pio_usb
+    usb_midi_host
+)
+
+pico_set_binary_type(remapper_auto copy_to_ram)
+if(PICO_PLATFORM STREQUAL "rp2040")
+    pico_set_linker_script(remapper_auto ${CMAKE_CURRENT_LIST_DIR}/remapper_single.ld)
+elseif(PICO_PLATFORM STREQUAL "rp2350-arm-s")
+    pico_set_linker_script(remapper_auto ${CMAKE_CURRENT_LIST_DIR}/remapper_single_rp2350.ld)
+else()
+    message(FATAL_ERROR "Unknown PICO_PLATFORM.")
+endif()
+pico_add_extra_outputs(remapper_auto)
 
 add_executable(remapper_dual_a
     src/main.cc

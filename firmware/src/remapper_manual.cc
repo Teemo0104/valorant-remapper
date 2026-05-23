@@ -3379,9 +3379,7 @@ void process_mapping(bool auto_repeat) {
             return -1;
         };
 
-        // —— 手动压枪输入（仅在自动识别关闭时生效）——
-        if (g_auto_armed < 0) {
-
+        // —— 手动压枪输入 ——
         // —— 侧键边沿 → 单/双击 + ctrl 状态 → 找对应枪 ——
         for (uint8_t i = 0; i < NUM_SIDE_BTNS; i++) {
             if (!edges_btns[i]) continue;
@@ -3445,20 +3443,6 @@ void process_mapping(bool auto_repeat) {
                 trigger_unload();
             }
             prev_custom_disable[i] = now;
-        }
-
-        } // end if (g_auto_armed < 0)
-
-        // —— 自动识别（GSI）同步：仅在脚本推送变更时强制锁定/卸弹 ——
-        //   这样本地手动操作（侧键、取消键）不会被每帧覆盖回来
-        static uint32_t prev_auto_armed_seq = 0;
-        if (g_auto_armed_seq != prev_auto_armed_seq) {
-            prev_auto_armed_seq = g_auto_armed_seq;
-            if (g_auto_armed >= 0) {
-                armed = g_auto_armed;
-            } else if (g_auto_armed == -1 && armed != -1) {
-                trigger_unload();
-            }
         }
 
         // —— 左键边沿：装弹中 → 开播 ——
