@@ -29,10 +29,10 @@ jobs:
         working-directory: firmware
         run: |
           echo "=== remapper_auto.cc / remapper_manual.cc / remapper.cc 哈希 ==="
-          sha256sum src/remapper_auto.cc src/remapper_manual.cc src/remapper.cc || true
+          sha256sum src/remapper.cc || true
           echo "=== CMakeLists.txt 哈希 ==="
           sha256sum CMakeLists.txt
-          wc -l src/remapper_auto.cc src/remapper_manual.cc src/remapper.cc
+          wc -l src/remapper.cc
 
       - name: Clean build (no cache)
         working-directory: firmware
