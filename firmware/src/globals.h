@@ -73,4 +73,9 @@ extern volatile PersistConfigReturnCode persist_config_return_code;
 extern volatile int8_t   g_auto_armed;
 extern volatile uint32_t g_auto_armed_seq;
 
+// 急停总开关 toggle：0 = 关闭；1 = 启用
+// （仅在 reverse_mapping 配置了 0xFFF5000E 开关键时才有意义）
+extern volatile int8_t   g_cs_enabled;
+extern volatile uint32_t g_cs_enabled_seq;
+
 #endif

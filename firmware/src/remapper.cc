@@ -3559,7 +3559,7 @@ void process_mapping(bool auto_repeat) {
     //   松开 S+D → W+A 持续 delay_SD ms                (         0xFFF50009)
     //
     // 急停总开关键（Register 0xFFF5000E != 0 时启用 toggle 模式）：
-    //   按下该键 → 翻转 cs_toggle_enabled（每按一次切换 on/off）
+    //   按下该键 → 翻转 g_cs_enabled（每按一次切换 on/off）
     //   启动默认 off，处于 off 时所有方向的 delay_* 被视为 0
     //   register == 0 时退化为旧行为：8 个方向按各自 delay_X 始终生效
     //
@@ -3629,7 +3629,10 @@ void process_mapping(bool auto_repeat) {
         static bool prev_jt    = false;
 
         // —— 急停总开关 toggle ——
-        static bool      cs_toggle_enabled    = false;  // 当前是否启用急停（按键 toggle 状态）
+        //   当前状态保存在全局 g_cs_enabled，模式跟 g_auto_armed 对齐：
+        //     - 便于跨核访问 / 配置命令直接读写（SET_CS_ENABLED）
+        //     - _seq 计数让消费者（如果以后有的话）能感知变更
+        //   下面这两个 static 只是本函数内部用的 edge-detection 缓存，不需要全局
         static bool      prev_cs_toggle_held  = false;
         static uint32_t  cs_toggle_key_cached = 0;
         static int32_t*  p_cs_toggle          = nullptr;
@@ -3697,23 +3700,27 @@ void process_mapping(bool auto_repeat) {
         bool jt_held = p_jt && (*p_jt != 0);
 
         // —— 急停总开关键：edge-triggered toggle ——
-        //   key=0      → 急停按各方向 delay_X 原样工作（向后兼容）
-        //   key!=0     → 每次按下翻转 cs_toggle_enabled；启动默认 false（关闭）
-        //   key 变更   → 强制重置 toggle 为 false，避免新键继承旧状态
+        //   按下边沿翻转 g_cs_enabled (0 ↔ 1)，并 bump _seq
+        //   开关键变更时强制重置为 0（关），避免新键继承旧的 on 状态
+        //   key == 0 时不触摸全局，外层后续也不门控延迟（向后兼容旧行为）
         if (cs_toggle_key_cached != cs_toggle_key_now) {
             cs_toggle_key_cached = cs_toggle_key_now;
             p_cs_toggle = (cs_toggle_key_now != 0) ? get_state_ptr(cs_toggle_key_now, 0, true) : nullptr;
-            cs_toggle_enabled   = false;
+            if (g_cs_enabled != 0) {
+                g_cs_enabled = 0;
+                g_cs_enabled_seq++;
+            }
             prev_cs_toggle_held = false;
         }
         if (cs_toggle_key_now != 0) {
             bool cs_toggle_held = p_cs_toggle && (*p_cs_toggle != 0);
             if (cs_toggle_held && !prev_cs_toggle_held) {
-                cs_toggle_enabled = !cs_toggle_enabled;
+                g_cs_enabled = (g_cs_enabled != 0) ? 0 : 1;
+                g_cs_enabled_seq++;
             }
             prev_cs_toggle_held = cs_toggle_held;
             // 关闭态：把所有方向的延迟当作 0，下方所有触发判定自动失活
-            if (!cs_toggle_enabled) {
+            if (g_cs_enabled == 0) {
                 delay_A = delay_D = delay_W = delay_S = 0;
                 delay_WA = delay_WD = delay_SA = delay_SD = 0;
             }

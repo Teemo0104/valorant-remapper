@@ -59,3 +59,8 @@ volatile PersistConfigReturnCode persist_config_return_code = PersistConfigRetur
 // _seq 在每次变更时自增，供其他核 / 主循环检测变更
 volatile int8_t   g_auto_armed     = -1;
 volatile uint32_t g_auto_armed_seq = 0;
+
+// 急停总开关 toggle：0 = 关闭；1 = 启用
+// _seq 在每次变更时自增（按键 toggle 和 SET_CS_ENABLED 命令都会 bump）
+volatile int8_t   g_cs_enabled     = 0;
+volatile uint32_t g_cs_enabled_seq = 0;
