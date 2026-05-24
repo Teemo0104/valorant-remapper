@@ -64,3 +64,7 @@ volatile uint32_t g_auto_armed_seq = 0;
 // _seq 在每次变更时自增（按键 toggle 和 SET_CS_ENABLED 命令都会 bump）
 volatile int8_t   g_cs_enabled     = 0;
 volatile uint32_t g_cs_enabled_seq = 0;
+
+// SOCD 清理开关：0 = 关闭；1 = 启用
+volatile int8_t   g_socd_enabled     = 0;
+volatile uint32_t g_socd_enabled_seq = 0;

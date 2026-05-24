@@ -1,0 +1,3631 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>WACFG</title>
+<style>
+  :root {
+    /* 苹果浅色 / 毛玻璃调色板 */
+    --bg-warm: #fde8d4;        /* 顶部暖橘 */
+    --bg-cool: #cfe0ff;        /* 底部冷蓝 */
+    --bg-tint: #f4e6ff;        /* 侧边淡紫 */
+
+    --surface: rgba(255, 255, 255, 0.55);
+    --surface-hover: rgba(255, 255, 255, 0.78);
+    --surface-on: rgba(0, 122, 255, 0.10);
+    --surface-frost: rgba(255, 255, 255, 0.62);
+
+    --border: rgba(0, 0, 0, 0.06);
+    --border-hover: rgba(0, 0, 0, 0.12);
+    --border-on: rgba(0, 122, 255, 0.42);
+    --hairline: rgba(0, 0, 0, 0.08);
+
+    --text: #1d1d1f;
+    --text-secondary: #515154;
+    --text-tertiary: #86868b;
+
+    --accent: #007aff;            /* Apple system blue */
+    --accent-hover: #0066d6;
+    --accent-glow: rgba(0, 122, 255, 0.22);
+
+    --warning: #ff9f0a;
+    --warning-hover: #e08800;
+    --warning-bg: rgba(255, 159, 10, 0.10);
+    --warning-text: #8a5300;
+
+    --ok: #34c759;
+    --ok-bg: rgba(52, 199, 89, 0.10);
+    --ok-text: #1f7a3a;
+
+    --err: #ff3b30;
+    --err-bg: rgba(255, 59, 48, 0.10);
+    --err-text: #a01b14;
+
+    --info-bg: rgba(0, 122, 255, 0.08);
+    --info-text: #0050b0;
+
+    --radius-sm: 10px;
+    --radius-md: 16px;
+    --radius-lg: 22px;
+
+    --shadow-card: 0 18px 60px -20px rgba(15, 30, 60, 0.22),
+                   0 4px 16px -4px rgba(15, 30, 60, 0.08);
+    --shadow-pop:  0 30px 80px -20px rgba(15, 30, 60, 0.32),
+                   0 8px 24px -6px rgba(15, 30, 60, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+
+  input[type="checkbox"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid rgba(0, 0, 0, 0.18);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    position: relative;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    flex-shrink: 0;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  }
+
+  input[type="checkbox"]:hover {
+    border-color: rgba(0, 0, 0, 0.32);
+  }
+
+  input[type="checkbox"]:checked {
+    background: linear-gradient(180deg, #1f8bff 0%, var(--accent) 100%);
+    border-color: var(--accent);
+    box-shadow: 0 2px 6px rgba(0, 122, 255, 0.28);
+  }
+
+  input[type="checkbox"]:checked::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 2px;
+    width: 4px;
+    height: 8px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+                 "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    background:
+      radial-gradient(1400px 900px at 8% -10%,  var(--bg-warm) 0%, transparent 55%),
+      radial-gradient(1100px 800px at 100% 20%, var(--bg-cool) 0%, transparent 60%),
+      radial-gradient(900px  700px at 30% 110%, var(--bg-tint) 0%, transparent 55%),
+      linear-gradient(180deg, #f7f4ef 0%, #eef2f7 100%);
+    background-attachment: fixed;
+    color: var(--text);
+    margin: 0;
+    padding: 40px 24px;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    letter-spacing: -0.005em;
+  }
+
+  /* 给整个页面加一层非常细微的颗粒纹理（避免纯色渐变发涩） */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.05 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+    opacity: 0.5;
+    mix-blend-mode: multiply;
+    z-index: 0;
+  }
+
+  .card {
+    background: var(--surface-frost);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: var(--radius-lg);
+    padding: 36px 38px;
+    width: 100%;
+    max-width: 820px;
+    box-shadow: var(--shadow-card),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9),
+                inset 0 0 0 0.5px rgba(255, 255, 255, 0.4);
+    position: relative;
+    z-index: 1;
+    overflow: hidden;
+  }
+
+  .card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg,
+                  rgba(255, 255, 255, 0.9) 0%,
+                  rgba(255, 255, 255, 0.2) 35%,
+                  rgba(255, 255, 255, 0) 60%,
+                  rgba(255, 255, 255, 0.3) 100%);
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  h1 {
+    margin: 0 0 28px;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    background: linear-gradient(180deg, #1d1d1f 0%, #3a3a3c 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    display: inline-block;
+  }
+
+  h2 {
+    margin: 32px 0 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+
+  h2::before {
+    content: '';
+    display: inline-block;
+    width: 4px;
+    height: 14px;
+    background: linear-gradient(180deg, var(--accent) 0%, #4ea4ff 100%);
+    border-radius: 2px;
+    box-shadow: 0 1px 4px var(--accent-glow);
+  }
+
+  .row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    background: linear-gradient(180deg, #1f8bff 0%, var(--accent) 100%);
+    color: #fff;
+    border: 1px solid rgba(0, 70, 200, 0.32);
+    border-radius: var(--radius-sm);
+    padding: 9px 18px;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: -0.005em;
+    cursor: pointer;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.35),
+      0 1px 2px rgba(0, 122, 255, 0.18),
+      0 4px 14px -2px rgba(0, 122, 255, 0.20);
+    position: relative;
+    font-family: inherit;
+  }
+
+  button:hover:not(:disabled) {
+    transform: translateY(-1px);
+    background: linear-gradient(180deg, #2d92ff 0%, #0073ee 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 2px 4px rgba(0, 122, 255, 0.22),
+      0 8px 20px -2px rgba(0, 122, 255, 0.30);
+  }
+
+  button:active:not(:disabled) {
+    transform: translateY(0);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+
+  button.loading {
+    position: relative;
+    color: transparent !important;
+    pointer-events: none;
+  }
+
+  button.loading::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    margin: -8px 0 0 -8px;
+    border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: #fff;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  button:disabled {
+    background: rgba(0, 0, 0, 0.04);
+    color: var(--text-tertiary);
+    border-color: rgba(0, 0, 0, 0.06);
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  button.secondary {
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--text);
+    border: 1px solid var(--border-hover);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+
+  button.secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.92);
+    border-color: rgba(0, 0, 0, 0.18);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 1),
+      0 4px 12px rgba(0, 0, 0, 0.08);
+  }
+
+  button.warning {
+    background: linear-gradient(180deg, #ffb73e 0%, var(--warning) 100%);
+    border-color: rgba(180, 100, 0, 0.4);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 1px 2px rgba(255, 159, 10, 0.18),
+      0 4px 14px -2px rgba(255, 159, 10, 0.28);
+  }
+
+  button.warning:hover:not(:disabled) {
+    background: linear-gradient(180deg, #ffc35a 0%, #ea8e00 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.45),
+      0 2px 4px rgba(255, 159, 10, 0.22),
+      0 8px 20px -2px rgba(255, 159, 10, 0.38);
+  }
+
+  button.danger {
+    background: linear-gradient(180deg, #ff6359 0%, var(--err) 100%);
+    border-color: rgba(170, 30, 20, 0.4);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.32),
+      0 1px 2px rgba(255, 59, 48, 0.18),
+      0 4px 14px -2px rgba(255, 59, 48, 0.26);
+  }
+
+  button.danger:hover:not(:disabled) {
+    background: linear-gradient(180deg, #ff7269 0%, #e62a1f 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      0 2px 4px rgba(255, 59, 48, 0.22),
+      0 8px 20px -2px rgba(255, 59, 48, 0.36);
+  }
+
+  .preset-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 10px 0 6px;
+  }
+
+  .preset {
+    padding: 7px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.6);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .preset:hover:not(:disabled) {
+    background: rgba(0, 122, 255, 0.08);
+    color: var(--accent);
+    border-color: rgba(0, 122, 255, 0.32);
+    transform: translateY(-1px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8),
+                0 4px 10px -2px rgba(0, 122, 255, 0.18);
+  }
+
+  label {
+    display: block;
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin: 14px 0 8px;
+    font-weight: 500;
+  }
+
+  input[type="number"] {
+    width: 90px;
+    padding: 8px 12px;
+    border: 1px solid var(--border-hover);
+    background: rgba(255, 255, 255, 0.85);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+    font-weight: 500;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+
+  input[type="number"].sens { width: 140px; font-size: 17px; font-weight: 600; }
+
+  input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow),
+                inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    background: #fff;
+  }
+
+  input[type="number"]:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  select {
+    padding: 7px 28px 7px 11px;
+    border: 1px solid var(--border-hover);
+    background:
+      url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path d='M3 4.5l3 3 3-3' stroke='%23515154' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>") no-repeat right 9px center,
+      rgba(255, 255, 255, 0.85);
+    background-size: 12px 12px, auto;
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    font-family: ui-monospace, "SF Mono", "JetBrains Mono", Consolas, monospace;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow),
+                inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    background-color: #fff;
+  }
+
+  select:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .multiplier-display {
+    margin-top: 14px;
+    padding: 14px 18px;
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    border-radius: var(--radius-sm);
+    font-family: ui-monospace, "SF Mono", monospace;
+    font-size: 14px;
+    color: var(--text-secondary);
+    border: 1px solid var(--border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  }
+
+  .multiplier-display .big {
+    color: var(--text);
+    font-size: 19px;
+    font-weight: 600;
+    margin-right: 10px;
+    letter-spacing: -0.01em;
+  }
+
+  .multiplier-display.out-of-range .big { color: var(--err); }
+
+  .status {
+    padding: 12px 16px;
+    margin-top: 20px;
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    transition: opacity 0.3s, transform 0.3s;
+    opacity: 1;
+    transform: translateY(0);
+    border: 1px solid transparent;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+  }
+
+  .status.hide { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+
+  .status.info {
+    background: var(--info-bg);
+    color: var(--info-text);
+    border-color: rgba(0, 122, 255, 0.18);
+  }
+
+  .status.ok {
+    background: var(--ok-bg);
+    color: var(--ok-text);
+    border-color: rgba(52, 199, 89, 0.22);
+  }
+
+  .status.err {
+    background: var(--err-bg);
+    color: var(--err-text);
+    border-color: rgba(255, 59, 48, 0.22);
+  }
+
+  .status.warn {
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    border-color: rgba(255, 159, 10, 0.25);
+  }
+
+  .panel { margin-top: 10px; animation: fadeIn 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+  .panel.hide { display: none; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-8px); filter: blur(4px); }
+    to   { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+
+  .cs-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+    margin-top: 6px;
+  }
+
+  .cs-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .cs-item:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  }
+
+  .cs-item.on {
+    border-color: var(--border-on);
+    background: var(--surface-on);
+    box-shadow: 0 0 16px rgba(59,130,246,0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  .cs-item .name {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+  }
+
+  .cs-item .name .arrow { color: var(--text-tertiary); margin: 0 4px; }
+
+  .cs-item input[type="number"] {
+    width: 64px;
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  .cs-item .unit { font-size: 11px; color: var(--text-tertiary); }
+
+  .cs-item select { font-size: 12px; padding: 5px 8px; }
+
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-top: 8px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .toggle-row:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+  }
+
+  .toggle-row.on {
+    border-color: var(--border-on);
+    background: var(--surface-on);
+    box-shadow: 0 0 16px rgba(59,130,246,0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  .toggle-row .name {
+    font-size: 13px;
+    color: var(--text);
+    flex: 1;
+    line-height: 1.4;
+  }
+
+  .group-title {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    margin: 18px 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    font-weight: 600;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-tertiary);
+    margin-top: 10px;
+    line-height: 1.6;
+  }
+
+  .gun-row {
+    display: grid;
+    grid-template-columns: 24px 96px 1fr 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .gun-row:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+  }
+
+  .gun-row.on {
+    border-color: var(--border-on);
+    background: var(--surface-on);
+    box-shadow: 0 0 16px rgba(59,130,246,0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  .gun-row .gun-name {
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text);
+  }
+
+  .gun-row select { width: 100%; }
+
+  .kbrec-row {
+    display: grid;
+    grid-template-columns: 24px 60px 1fr 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .kbrec-row:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+  }
+
+  .kbrec-row.on {
+    border-color: var(--border-on);
+    background: var(--surface-on);
+    box-shadow: 0 0 16px rgba(59,130,246,0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  .kbrec-row .label-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .kbrec-row select { width: 100%; }
+
+  .disable-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px 14px;
+    margin-top: 6px;
+  }
+
+  .disable-item {
+    display: grid;
+    grid-template-columns: 24px 56px 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 8px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .disable-item:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+  }
+
+  .disable-item.on {
+    border-color: var(--border-on);
+    background: var(--surface-on);
+    box-shadow: 0 0 16px rgba(59,130,246,0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  .disable-item .label-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .disable-item select {
+    width: 100%;
+    font-size: 12px;
+    padding: 5px 8px;
+  }
+
+  .jt-row {
+    display: grid;
+    grid-template-columns: 24px 1fr auto auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-top: 8px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .jt-row:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+  }
+
+  .jt-row.on {
+    border-color: var(--border-on);
+    background: var(--surface-on);
+    box-shadow: 0 0 16px rgba(59,130,246,0.08), inset 0 1px 0 rgba(255,255,255,0.03);
+  }
+
+  /* ========================================================
+     回正速度行（滑块 + 数字输入）
+     ======================================================== */
+  .ret-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-top: 8px;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .ret-row:hover {
+    background: var(--surface-hover);
+    border-color: var(--border-hover);
+  }
+  .ret-slider-wrap {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .ret-slider-wrap input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    background: rgba(0, 0, 0, 0.12);
+    border-radius: 2px;
+    cursor: pointer;
+  }
+  .ret-slider-wrap input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #1f8bff 0%, var(--accent) 100%);
+    box-shadow: 0 1px 4px rgba(0,122,255,0.35);
+    cursor: pointer;
+    border: none;
+  }
+  .ret-slider-wrap input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+  }
+  .ret-slider-label {
+    font-size: 13px;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  .ret-num-wrap {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ret-num-wrap input[type="number"] {
+    width: 72px;
+    text-align: right;
+  }
+  .ret-num-wrap .unit {
+    font-size: 12px;
+    color: var(--text-tertiary);
+  }
+  .ret-row .ret-preset-row {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 6px;
+    margin-top: 2px;
+    flex-wrap: wrap;
+  }
+  .ret-row .ret-preset {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ret-row .ret-preset:hover {
+    background: rgba(255,255,255,0.9);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .ret-row .ret-preset.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  /* ========================================================
+     行级冲突警示（红色描边）
+     ======================================================== */
+  .gun-row.conflict,
+  .kbrec-row.conflict,
+  .disable-item.conflict {
+    border-color: var(--err) !important;
+    background: var(--err-bg) !important;
+    box-shadow: 0 0 0 1px var(--err), 0 0 14px rgba(255,59,48,0.10);
+  }
+  .gun-row.conflict::before,
+  .kbrec-row.conflict::before,
+  .disable-item.conflict::before {
+    content: '⚠';
+    position: absolute;
+    top: -8px;
+    right: 10px;
+    background: var(--err);
+    color: #fff;
+    font-size: 10px;
+    line-height: 1;
+    padding: 3px 6px;
+    border-radius: 6px;
+    pointer-events: none;
+  }
+  .gun-row, .kbrec-row, .disable-item { position: relative; }
+
+  /* ========================================================
+     顶部冲突横幅
+     ======================================================== */
+  .live-conflict-bar {
+    position: sticky;
+    top: 12px;
+    z-index: 50;
+    margin: 16px 0;
+    padding: 12px 16px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(135deg,
+      rgba(255, 59, 48, 0.12) 0%,
+      rgba(255, 159, 10, 0.10) 100%);
+    border: 1px solid rgba(255, 59, 48, 0.32);
+    box-shadow: 0 6px 24px -8px rgba(255, 59, 48, 0.30);
+    backdrop-filter: blur(20px) saturate(1.4);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .live-conflict-bar.hide { display: none; }
+  .live-conflict-bar .lc-icon {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--err);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .live-conflict-bar .lc-body { flex: 1; min-width: 0; }
+  .live-conflict-bar .lc-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--err-text);
+    margin-bottom: 4px;
+  }
+  .live-conflict-bar .lc-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 12.5px;
+    color: var(--err-text);
+    line-height: 1.55;
+  }
+  .live-conflict-bar .lc-list li {
+    padding: 2px 0;
+  }
+  .live-conflict-bar .lc-list li.warn {
+    color: var(--warning-text);
+  }
+  .live-conflict-bar .lc-list li::before {
+    content: '•';
+    margin-right: 6px;
+    opacity: 0.6;
+  }
+
+  @media (max-width: 640px) {
+    body { padding: 16px; }
+    .card { padding: 20px; border-radius: 20px; }
+    .cs-grid { grid-template-columns: 1fr; }
+    .disable-grid { grid-template-columns: 1fr; }
+    .gun-row { grid-template-columns: 24px 1fr 1fr; }
+    .gun-row .gun-name { display: none; }
+    .kbrec-row { grid-template-columns: 24px 1fr 1fr; }
+    .kbrec-row .label-text { display: none; }
+    .save-bar { flex-direction: column; align-items: stretch; gap: 14px; }
+    .save-bar-action { flex-direction: column; align-items: stretch; gap: 8px; }
+    .save-bar .save-btn { width: 100%; }
+  }
+
+  /* ========================================================
+     统一保存栏
+     ======================================================== */
+  .save-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 36px 0 4px;
+    padding: 18px 20px;
+    border-radius: var(--radius-md);
+    background:
+      linear-gradient(135deg,
+        rgba(0, 122, 255, 0.08) 0%,
+        rgba(255, 255, 255, 0.55) 60%,
+        rgba(0, 122, 255, 0.06) 100%);
+    border: 1px solid rgba(0, 122, 255, 0.18);
+    backdrop-filter: blur(20px) saturate(1.4);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.8),
+      0 4px 16px -4px rgba(0, 122, 255, 0.12);
+  }
+
+  .save-bar-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .save-bar-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 2px;
+  }
+
+  .save-bar-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .save-bar-action {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .save-btn {
+    padding: 11px 24px;
+    font-size: 14.5px;
+    font-weight: 600;
+    letter-spacing: -0.005em;
+  }
+
+  /* ========================================================
+     重置 / 恢复栏（红色调，跟主保存栏区分）
+     ======================================================== */
+  .reset-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 14px 0 4px;
+    padding: 16px 20px;
+    border-radius: var(--radius-md);
+    background:
+      linear-gradient(135deg,
+        rgba(255, 59, 48, 0.07) 0%,
+        rgba(255, 255, 255, 0.50) 60%,
+        rgba(255, 59, 48, 0.05) 100%);
+    border: 1px solid rgba(255, 59, 48, 0.18);
+    backdrop-filter: blur(20px) saturate(1.4);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.75),
+      0 4px 16px -4px rgba(255, 59, 48, 0.10);
+  }
+
+  .reset-bar-info { flex: 1; min-width: 0; }
+  .reset-bar-title {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.01em;
+    margin-bottom: 2px;
+  }
+  .reset-bar-sub {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+  .reset-bar-action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .reset-bar-action select {
+    font-family: inherit;
+    font-size: 13px;
+    min-width: 170px;
+    max-width: 220px;
+  }
+  @media (max-width: 720px) {
+    .reset-bar { flex-direction: column; align-items: stretch; gap: 14px; }
+    .reset-bar-action { flex-direction: column; align-items: stretch; gap: 8px; }
+    .reset-bar-action select { width: 100%; max-width: none; }
+    .reset-bar-action button { width: 100%; }
+  }
+
+  /* 弹窗里的"配置名称"输入 */
+  .modal-name-input {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid var(--border-hover);
+    background: rgba(255, 255, 255, 0.95);
+    color: var(--text);
+    border-radius: var(--radius-sm);
+    font-size: 14px;
+    font-family: inherit;
+    font-weight: 500;
+    transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  }
+  .modal-name-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow), inset 0 1px 2px rgba(0, 0, 0, 0.04);
+    background: #fff;
+  }
+  .modal-name-hint {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+  }
+  .modal-name-hint.warn { color: var(--warning-text); }
+  .modal-name-hint.err  { color: var(--err-text); }
+
+  /* ========================================================
+     确认弹窗（Apple-alert 风格）
+     ======================================================== */
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(40, 50, 70, 0.18);
+    backdrop-filter: blur(18px) saturate(1.5);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: backdropIn 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .modal-backdrop.hide { display: none; }
+
+  @keyframes backdropIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+  }
+
+  .modal {
+    background: rgba(255, 255, 255, 0.88);
+    backdrop-filter: blur(40px) saturate(1.8);
+    -webkit-backdrop-filter: blur(40px) saturate(1.8);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 22px;
+    width: 100%;
+    max-width: 500px;
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    box-shadow:
+      var(--shadow-pop),
+      inset 0 1px 0 rgba(255, 255, 255, 0.9),
+      inset 0 0 0 0.5px rgba(255, 255, 255, 0.5);
+    animation: modalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden;
+    position: relative;
+  }
+
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(10px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .modal-header {
+    padding: 22px 24px 14px;
+  }
+
+  .modal-title {
+    margin: 0 0 4px;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: -0.02em;
+  }
+
+  .modal-sub {
+    margin: 0;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+  }
+
+  .modal-body {
+    padding: 4px 24px 8px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .modal-section {
+    margin-top: 12px;
+  }
+
+  .modal-section-title {
+    font-size: 10.5px;
+    font-weight: 600;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 8px;
+  }
+
+  /* 改动列表 */
+  .diff-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .diff-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.55);
+    border: 1px solid var(--border);
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--text);
+  }
+
+  .diff-item.diff-none {
+    color: var(--text-tertiary);
+    font-style: italic;
+    justify-content: center;
+  }
+
+  .diff-tag {
+    flex-shrink: 0;
+    font-size: 10.5px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 5px;
+    line-height: 1.4;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .diff-item.diff-add .diff-tag {
+    background: var(--ok-bg);
+    color: var(--ok-text);
+  }
+  .diff-item.diff-remove .diff-tag {
+    background: var(--err-bg);
+    color: var(--err-text);
+  }
+  .diff-item.diff-change .diff-tag {
+    background: var(--info-bg);
+    color: var(--info-text);
+  }
+
+  .diff-text {
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+  }
+
+  /* 冲突检测 */
+  #modalConflicts {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .conflict-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 9px 12px;
+    border-radius: 10px;
+    font-size: 12.5px;
+    line-height: 1.45;
+    border: 1px solid transparent;
+  }
+
+  .conflict-item.conflict-medium {
+    background: var(--warning-bg);
+    color: var(--warning-text);
+    border-color: rgba(255, 159, 10, 0.25);
+  }
+
+  .conflict-item.conflict-severe {
+    background: var(--err-bg);
+    color: var(--err-text);
+    border-color: rgba(255, 59, 48, 0.22);
+  }
+
+  .conflict-icon {
+    flex-shrink: 0;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  .conflict-ok {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: var(--ok-bg);
+    color: var(--ok-text);
+    border: 1px solid rgba(52, 199, 89, 0.22);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+
+  .conflict-ok-icon {
+    font-weight: 700;
+    font-size: 14px;
+  }
+
+  .modal-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 16px 24px 20px;
+    border-top: 1px solid var(--hairline);
+    background: rgba(255, 255, 255, 0.35);
+  }
+
+  .modal-footer button {
+    min-width: 96px;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>WACFG</h1>
+
+  <div class="row">
+    <button id="connect">连接设备</button>
+    <button id="refresh" class="secondary" disabled>重新读取</button>
+  </div>
+
+  <div id="initPanel" class="panel hide">
+    <div class="status warn" style="margin-top:14px">
+      设备未初始化所需的 Expression 1 / Register mapping，点下方按钮自动建好。
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button id="initialize" class="warning">一键初始化并保存</button>
+    </div>
+  </div>
+
+  <div id="mainPanel" class="panel hide">
+
+    <!-- ========== 灵敏度 ========== -->
+    <h2>灵敏度</h2>
+    <label for="gameSens">游戏内灵敏度</label>
+    <div class="row">
+      <input type="number" id="gameSens" class="sens" min="0.01" max="100" step="0.01" value="1.00">
+    </div>
+    <div class="preset-row">
+      <button class="preset" data-v="0.3">0.3</button>
+      <button class="preset" data-v="0.4">0.4</button>
+      <button class="preset" data-v="0.5">0.5</button>
+      <button class="preset" data-v="0.6">0.6</button>
+      <button class="preset" data-v="0.8">0.8</button>
+      <button class="preset" data-v="1.0">1.0</button>
+    </div>
+    <div class="multiplier-display" id="multDisplay">
+      <span class="big" id="multValue">1.000x</span>
+      <span id="multWarn" style="display:none;color:var(--err)">超出范围 0.1~5.0</span>
+    </div>
+
+    <!-- ========== 回报率覆盖 ========== -->
+    <h2>回报率覆盖</h2>
+    <label for="pollRate">USB 回报率（强制覆盖鼠标本身的值，重启设备后生效）</label>
+    <div class="row">
+      <select id="pollRate" style="width:auto;min-width:200px">
+        <option value="0">不覆盖（用设备本身）</option>
+        <option value="1">1000 Hz</option>
+        <option value="2">500 Hz</option>
+        <option value="4">250 Hz</option>
+        <option value="8">125 Hz</option>
+      </select>
+    </div>
+
+    <!-- ========== SOCD 清理 ========== -->
+    <h2>SOCD 清理</h2>
+    <div class="hint" style="margin-top:0">
+      同时按下相反方向键时（如 A+D 或 W+S），自动释放所有冲突方向。<br>
+      开启后适用于 WASD 与方向键。
+    </div>
+    <div class="disable-item" id="socdToggleRow">
+      <input type="checkbox" id="socdToggle">
+      <span class="label-text" style="font-weight:600">启用 SOCD 清理（大写开关）</span>
+    </div>
+
+    <!-- ========== 鼠标回正速度 ========== -->
+    <h2>鼠标回正速度</h2>
+    <div class="hint" style="margin-top:0">
+      松开左键后，固件会把整段压枪的偏移量在 <b id="retFramesShow">120</b> 帧内"匀速"
+      抬回原位置（约 <b id="retMsShow">120</b> ms，假设固件 1 ms / 帧）。
+      数值越小回正越快、越突兀；越大越柔和但回正未完成时就开下一发，准星会偏低。
+    </div>
+    <div class="ret-row">
+      <div class="ret-slider-wrap">
+        <span class="ret-slider-label">快</span>
+        <input type="range" id="retFramesSlider" min="1" max="500" step="1" value="120">
+        <span class="ret-slider-label">慢</span>
+      </div>
+      <div class="ret-num-wrap">
+        <input type="number" id="retFramesNum" min="1" max="500" step="1" value="120">
+        <span class="unit">帧</span>
+      </div>
+      <div class="ret-preset-row">
+        <button type="button" class="ret-preset" data-v="30">极快 30</button>
+        <button type="button" class="ret-preset" data-v="60">快 60</button>
+        <button type="button" class="ret-preset" data-v="120">默认 120</button>
+        <button type="button" class="ret-preset" data-v="200">柔和 200</button>
+        <button type="button" class="ret-preset" data-v="300">极柔 300</button>
+      </div>
+    </div>
+
+    <!-- ========== 关闭压枪键 ========== -->
+    <h2>关闭压枪键</h2>
+    <div class="hint" style="margin-top:0">
+      共 <b style="color:var(--accent)">7 个</b> 完全自定义的关闭键，可绑定鼠标侧键或键盘键。<br>
+      <b>⚠ 冲突检测：</b>若某个关闭键与"压枪触发"用的鼠标键相同
+      （例如把 B4 同时设为关闭压枪键 + Vandal 的压枪键），下方对应行会自动变红，
+      页面顶部也会弹出橙红色横幅，写入弹窗里也会再列一遍。
+    </div>
+    <div class="group-title">7 个自定义键</div>
+    <div class="disable-grid">
+      <div class="disable-item" data-slot="0">
+        <input type="checkbox" class="dk-en">
+        <span class="label-text">槽 1</span>
+        <select class="dk-key"></select>
+      </div>
+      <div class="disable-item" data-slot="1">
+        <input type="checkbox" class="dk-en">
+        <span class="label-text">槽 2</span>
+        <select class="dk-key"></select>
+      </div>
+      <div class="disable-item" data-slot="2">
+        <input type="checkbox" class="dk-en">
+        <span class="label-text">槽 3</span>
+        <select class="dk-key"></select>
+      </div>
+      <div class="disable-item" data-slot="3">
+        <input type="checkbox" class="dk-en">
+        <span class="label-text">槽 4</span>
+        <select class="dk-key"></select>
+      </div>
+      <div class="disable-item" data-slot="4">
+        <input type="checkbox" class="dk-en">
+        <span class="label-text">槽 5</span>
+        <select class="dk-key"></select>
+      </div>
+      <div class="disable-item" data-slot="5">
+        <input type="checkbox" class="dk-en">
+        <span class="label-text">槽 6</span>
+        <select class="dk-key"></select>
+      </div>
+      <div class="disable-item" data-slot="6">
+        <input type="checkbox" class="dk-en">
+        <span class="label-text">槽 7</span>
+        <select class="dk-key"></select>
+      </div>
+    </div>
+
+    <!-- ========== 压枪触发：鼠标侧键 ========== -->
+    <h2>压枪触发（鼠标侧键）</h2>
+    <div class="hint" style="margin-top:0">
+      勾选启用，选鼠标按键和触发方式。每把枪占用一个 (按键 × 触发方式) 组合；
+      多把枪冲突时以列表上方先出现者为准。<br>
+      <b>触发方式说明：</b>
+      <ul style="margin:4px 0 0 0; padding-left:20px; line-height:1.65;">
+        <li><b>单击 / 双击</b>：按一次 / 350 ms 内按两次。</li>
+        <li><b>Ctrl + 单击 / 双击</b>：在按住 Ctrl 时单击 / 双击。</li>
+        <li><b>按住 + 滚轮↑ / 滚轮↓</b>：按住所选鼠标键不放，再向上 / 向下滚动一格滚轮即可装弹。
+          滚轮 <i>不需要</i> 按下去。装弹用滚轮、不影响游戏内滚轮原本的操作（仍然会发送一次正常滚动事件）。</li>
+        <li><b>B3 中键 + 滚轮↑ / 滚轮↓</b>：选 B3 + 滚轮方向 = "按下滚轮往上/往下滚"。
+          手感上等于按下滚轮然后立刻滚一格，常用作"无侧键也能压枪"的备选触发。</li>
+      </ul>
+    </div>
+
+    <div class="group-title">步枪</div>
+    <div id="gunsRifles"></div>
+
+    <div class="group-title">冲锋枪</div>
+    <div id="gunsSMGs"></div>
+
+    <div class="group-title">霰弹枪</div>
+    <div id="gunsShotgun"></div>
+
+    <div class="group-title">机枪 / 重型</div>
+    <div id="gunsLMG"></div>
+
+    <div class="group-title">手枪</div>
+    <div id="gunsPistols"></div>
+
+    <!-- ========== 实时冲突横幅 ========== -->
+    <div id="liveConflictBar" class="live-conflict-bar hide">
+      <div class="lc-icon">!</div>
+      <div class="lc-body">
+        <div class="lc-title">检测到键位冲突，写入前请修正</div>
+        <ul class="lc-list" id="liveConflictList"></ul>
+      </div>
+    </div>
+
+    <!-- ========== 统一保存 ========== -->
+    <div class="save-bar">
+      <div class="save-bar-info">
+        <div class="save-bar-title">保存全部配置</div>
+        <div class="save-bar-sub">写入并持久化所有改动到设备</div>
+      </div>
+      <div class="save-bar-action">
+        <button id="applyAll" class="save-btn">保存全部配置</button>
+        <span id="applyAllHint" style="margin-left:10px;font-size:13px;color:var(--ok-text);display:none;"></span>
+      </div>
+    </div>
+
+    <!-- ========== 一键重置 / 命名配置库 ========== -->
+    <div class="reset-bar">
+      <div class="reset-bar-info">
+        <div class="reset-bar-title">关闭所有功能 / 配置库</div>
+        <div class="reset-bar-sub" id="resetBarSub">
+          一键关掉所有功能（键鼠直通）。下拉框是你之前命名保存的配置，随时选一个写回设备。
+        </div>
+      </div>
+      <div class="reset-bar-action">
+        <button id="resetAll" class="danger">一键重置</button>
+        <select id="restoreSelect" disabled title="选择一个命名配置"></select>
+        <button id="restoreAll" class="secondary" disabled>恢复此配置</button>
+      </div>
+    </div>
+
+    <!-- ========== 刷固件 ========== -->
+    <div class="reset-bar">
+      <div class="reset-bar-info">
+        <div class="reset-bar-title">刷固件</div>
+        <div class="reset-bar-sub">
+          把设备踢进 BOOTSEL 模式，电脑上会出现 <b>RPI-RP2</b> 盘符，把对应的 <code>.uf2</code> 文件拖进去就行。
+          双 Pico 板才用"刷 B 侧"。
+        </div>
+      </div>
+      <div class="reset-bar-action">
+        <button id="flashFw" class="warning" disabled>刷主固件</button>
+        <button id="flashBSide" class="secondary" disabled>刷 B 侧</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="status" class="status hide"></div>
+</div>
+
+<!-- ===================== 确认弹窗 ===================== -->
+<div id="modalBackdrop" class="modal-backdrop hide" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div class="modal" role="document">
+    <div class="modal-header">
+      <h3 class="modal-title" id="modalTitle">确认写入配置</h3>
+      <p class="modal-sub" id="modalSubtitle">请确认下列改动后写入设备。</p>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section hide" id="modalNameSection">
+        <div class="modal-section-title">配置名称</div>
+        <input type="text" id="modalNameInput" class="modal-name-input"
+               maxlength="20" autocomplete="off" spellcheck="false"
+               placeholder="例如：竞技 / 练枪 / 休闲">
+        <div class="modal-name-hint" id="modalNameHint"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">本次改动</div>
+        <ul class="diff-list" id="modalDiff"></ul>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">压枪键位冲突检测</div>
+        <div id="modalConflicts"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="secondary" id="modalCancel" type="button">取消</button>
+      <button id="modalConfirm" type="button">确认写入</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// 配置区：弹道基准灵敏度（VALORANT 弹道表录制于游戏内灵敏度 = 1.0）
+// 如果未来你按其他灵敏度重录 recoil 弹道表，改这一个数字即可。
+// ============================================================
+const BASE_SENS = 1.0;
+
+// ============================================================
+// 协议常量
+// ============================================================
+const REPORT_ID_CONFIG = 100;
+const CONFIG_SIZE = 32;
+const CONFIG_VERSION = 18;
+// VID/PID 不再用于识别设备——固件按 RP2040 唯一 ID 在运行时派生 PID，
+// 这里只靠厂商自定义 usage page (0xFF00 / 0x0020) 来识别 remapper。
+const REMAPPER_USAGE_PAGE = 0xFF00;
+const REMAPPER_USAGE      = 0x0020;
+const isRemapperDevice = (d) =>
+  d.collections.some(c => c.usagePage === REMAPPER_USAGE_PAGE && c.usage === REMAPPER_USAGE);
+
+const RESET_INTO_BOOTSEL = 1, SET_CONFIG = 2, GET_CONFIG = 3, CLEAR_MAPPING = 4, ADD_MAPPING = 5, GET_MAPPING = 6;
+const PERSIST_CONFIG = 7, SUSPEND = 10, RESUME = 11, FLASH_B_SIDE = 14;
+const SET_SOCD_ENABLED = 27;
+const CLEAR_MACROS = 15, APPEND_TO_MACRO = 16, GET_MACRO = 17;
+const CLEAR_EXPRESSIONS = 19, APPEND_TO_EXPRESSION = 20, GET_EXPRESSION = 21;
+const CLEAR_QUIRKS = 23, ADD_QUIRK = 24, GET_QUIRK = 25;
+
+const NMACROS = 32, NEXPRESSIONS = 8, MACRO_ITEMS_IN_PACKET = 6;
+const OP_PUSH = 0, OP_PUSH_USAGE = 1;
+const SOURCE_USAGE = 0xFFF30001;        // Expression 1
+const PERSIST_CONFIG_SUCCESS = 1;
+
+// ====== Register 用法布局（与固件一致）======
+// 0x0001         灵敏度倍率 ×1000
+// 0x0002..0x0009 反向急停延迟（A/D/W/S/WA/WD/SA/SD）ms
+// 0x000A         跳投延迟 ms
+// 0x000B         跳投触发键 HID usage（i32 整字）
+// 0x000C         大跳开关 (0/1)
+// 0x000D         鼠标回正帧数（0 = 默认 120 帧；范围 1..500）
+// 0x000E         急停总开关键 HID usage（0 = 急停始终开启；非零 = 该键 toggle）
+// 0x0010..0x0017 8 把枪压枪触发配置 (button_id<<8) | trigger_type
+//                trigger_type: 1=单击 2=双击 3=Ctrl+单击 4=Ctrl+双击
+//                              5=按住+滚轮上 6=按住+滚轮下（B3 选项即"滚轮按下+滚动"）
+// 0x0020..0x0026 7 个自定义"关闭压枪"键 HID usage
+//
+// ⚠ VALORANT 版固件：已移除全部键盘相关功能（反向急停 / 跳投 / 大跳 /
+//   键盘装弹槽 / 急停总开关）。寄存器 0x02..0x0C、0x0E、0x30..0x33 固件不再读取。
+//   配置工具仍保留这些常量但不写入有效值，仅为兼容旧存档。
+const TARGET_SENS = 0xFFF50001;
+const CS_REG = {
+  A:  0xFFF50002,
+  D:  0xFFF50003,
+  W:  0xFFF50004,
+  S:  0xFFF50005,
+  WA: 0xFFF50006,
+  WD: 0xFFF50007,
+  SA: 0xFFF50008,
+  SD: 0xFFF50009,
+};
+const REG_JT_DELAY   = 0xFFF5000A;
+const REG_JT_KEY     = 0xFFF5000B;
+const REG_BIG_JUMP   = 0xFFF5000C;
+const REG_RETURN_FRAMES = 0xFFF5000D;   // 鼠标回正帧数：0=用默认值 120
+const REG_CS_TOGGLE_KEY = 0xFFF5000E;   // 急停总开关键 HID usage；0 = 急停常开
+const RETURN_FRAMES_DEFAULT = 120;
+const RETURN_FRAMES_MIN = 1;
+const RETURN_FRAMES_MAX = 500;
+const NUM_DISABLE    = 7;
+const REG_DISABLE    = [];                  // 0x0020..0x0026
+for (let i = 0; i < NUM_DISABLE; i++) REG_DISABLE.push(0xFFF50020 + i);
+const REG_GUN        = [];                  // 0x0010..0x001F
+for (let i = 0; i < 8; i++) REG_GUN.push(0xFFF50010 + i);
+const NUM_KBREC      = 4;
+const REG_KBREC      = [];                  // 0x0030..0x0033
+for (let i = 0; i < NUM_KBREC; i++) REG_KBREC.push(0xFFF50030 + i);
+
+const CS_KEYS = ['A','D','W','S','WA','WD','SA','SD'];
+const ALL_DELAY_TARGETS = [
+  TARGET_SENS,
+  ...CS_KEYS.map(k => CS_REG[k]),
+  REG_JT_DELAY, REG_JT_KEY, REG_BIG_JUMP,
+  REG_RETURN_FRAMES,
+  REG_CS_TOGGLE_KEY,
+  ...REG_DISABLE, ...REG_GUN, ...REG_KBREC,
+];
+
+const SCALE_MIN = 100;
+const SCALE_MAX = 5000;
+const DELAY_MAX = 1000;
+
+// ====== 枪 ID（与固件 process_mapping switch(armed) 顺序对齐）======
+//   0 狂徒  1 幻影   (步枪)
+//   2 幽灵 3 蜂刺   (冲锋枪)
+//   4 战神  5 奥丁      (机枪 / 重型)
+//   6 判官               (霰弹枪)
+//   7 狂怒              (手枪)
+const GUN_NAMES = [
+  '狂徒', '幻影', '幽灵', '蜂刺',
+  '战神', '奥丁', '判官', '狂怒',
+];
+const GUN_GROUPS = {
+  rifles:  ['狂徒', '幻影'],
+  smgs:    ['幽灵', '蜂刺'],
+  shotgun: ['判官'],
+  lmg:     ['战神', '奥丁'],
+  pistols: ['狂怒'],
+};
+
+const TRIGGER_LABELS = {
+  1: '单击', 2: '双击', 3: 'Ctrl + 单击', 4: 'Ctrl + 双击',
+  5: '按住 + 滚轮↑', 6: '按住 + 滚轮↓',
+};
+const BUTTON_LABELS = {
+  3: 'B3 中键', 4: 'B4 侧键', 5: 'B5 侧键', 6: 'B6 侧键', 7: 'B7 侧键', 8: 'B8 侧键',
+};
+
+// ====== 默认触发：与原始硬编码行为兼容 ======
+const DEFAULT_GUN_TRIGGER = {
+  狂徒:  { button: 5, trigger: 1 },   // B5 单击
+  幻影: { button: 5, trigger: 2 },   // B5 双击
+};
+
+// ====== HID usage 表（用于下拉框）======
+// 键盘：HID Usage Page 0x07
+const KEYBOARD_KEYS = [
+  { code: 0x04, name: 'A' }, { code: 0x05, name: 'B' }, { code: 0x06, name: 'C' },
+  { code: 0x07, name: 'D' }, { code: 0x08, name: 'E' }, { code: 0x09, name: 'F' },
+  { code: 0x0A, name: 'G' }, { code: 0x0B, name: 'H' }, { code: 0x0C, name: 'I' },
+  { code: 0x0D, name: 'J' }, { code: 0x0E, name: 'K' }, { code: 0x0F, name: 'L' },
+  { code: 0x10, name: 'M' }, { code: 0x11, name: 'N' }, { code: 0x12, name: 'O' },
+  { code: 0x13, name: 'P' }, { code: 0x14, name: 'Q' }, { code: 0x15, name: 'R' },
+  { code: 0x16, name: 'S' }, { code: 0x17, name: 'T' }, { code: 0x18, name: 'U' },
+  { code: 0x19, name: 'V' }, { code: 0x1A, name: 'W' }, { code: 0x1B, name: 'X' },
+  { code: 0x1C, name: 'Y' }, { code: 0x1D, name: 'Z' },
+  { code: 0x1E, name: '1' }, { code: 0x1F, name: '2' }, { code: 0x20, name: '3' },
+  { code: 0x21, name: '4' }, { code: 0x22, name: '5' }, { code: 0x23, name: '6' },
+  { code: 0x24, name: '7' }, { code: 0x25, name: '8' }, { code: 0x26, name: '9' },
+  { code: 0x27, name: '0' },
+  { code: 0x28, name: 'Enter' }, { code: 0x29, name: 'Esc' },
+  { code: 0x2A, name: 'Backspace' }, { code: 0x2B, name: 'Tab' },
+  { code: 0x2C, name: 'Space' },
+  { code: 0x2D, name: '-' }, { code: 0x2E, name: '=' },
+  { code: 0x2F, name: '[' }, { code: 0x30, name: ']' },
+  { code: 0x31, name: '\\' }, { code: 0x33, name: ';' }, { code: 0x34, name: '\'' },
+  { code: 0x35, name: '`' }, { code: 0x36, name: ',' }, { code: 0x37, name: '.' },
+  { code: 0x38, name: '/' }, { code: 0x39, name: 'CapsLock' },
+  { code: 0x3A, name: 'F1'  }, { code: 0x3B, name: 'F2'  }, { code: 0x3C, name: 'F3'  },
+  { code: 0x3D, name: 'F4'  }, { code: 0x3E, name: 'F5'  }, { code: 0x3F, name: 'F6'  },
+  { code: 0x40, name: 'F7'  }, { code: 0x41, name: 'F8'  }, { code: 0x42, name: 'F9'  },
+  { code: 0x43, name: 'F10' }, { code: 0x44, name: 'F11' }, { code: 0x45, name: 'F12' },
+  { code: 0xE0, name: 'LCtrl'  }, { code: 0xE1, name: 'LShift' },
+  { code: 0xE2, name: 'LAlt'   }, { code: 0xE3, name: 'LGUI'   },
+  { code: 0xE4, name: 'RCtrl'  }, { code: 0xE5, name: 'RShift' },
+  { code: 0xE6, name: 'RAlt'   }, { code: 0xE7, name: 'RGUI'   },
+];
+
+// 鼠标按键：HID Usage Page 0x09
+const MOUSE_BUTTONS = [
+  { usage: 0x00090003, name: 'B3 中键' },
+  { usage: 0x00090004, name: 'B4 侧键' },
+  { usage: 0x00090005, name: 'B5 侧键' },
+  { usage: 0x00090006, name: 'B6 侧键' },
+  { usage: 0x00090007, name: 'B7 侧键' },
+  { usage: 0x00090008, name: 'B8 侧键' },
+];
+
+// 计算键盘 keycode 对应的完整 HID usage（高 16 bit 固定 0x0007）
+function kbUsage(code) { return 0x00070000 | code; }
+
+// ============================================================
+// CRC32
+// ============================================================
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(view, length) {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < length; i++) {
+    crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ view.getUint8(i)) & 0xFF];
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+let device = null;
+let cfg = null;
+const $ = id => document.getElementById(id);
+const statusEl = $('status');
+function showStatus(text, kind) { statusEl.className = 'status ' + kind; statusEl.textContent = text; }
+
+// ============================================================
+// 协议 I/O
+// ============================================================
+function buildPacket(command, fields) {
+  const buf = new ArrayBuffer(CONFIG_SIZE);
+  const dv = new DataView(buf);
+  dv.setUint8(0, CONFIG_VERSION);
+  dv.setUint8(1, command);
+  let pos = 2;
+  for (const [type, value] of fields) {
+    if (type === 'u8')  { dv.setUint8(pos, value); pos += 1; }
+    else if (type === 'u16') { dv.setUint16(pos, value, true); pos += 2; }
+    else if (type === 'u32') { dv.setUint32(pos, value, true); pos += 4; }
+    else if (type === 'i32') { dv.setInt32(pos, value, true); pos += 4; }
+  }
+  dv.setUint32(CONFIG_SIZE - 4, crc32(dv, CONFIG_SIZE - 4), true);
+  return buf;
+}
+async function sendCmd(command, fields = []) {
+  await device.sendFeatureReport(REPORT_ID_CONFIG, buildPacket(command, fields));
+}
+async function rawResp() {
+  let attempts = 10, delay = 4, view;
+  while (true) {
+    const raw = await device.receiveFeatureReport(REPORT_ID_CONFIG);
+    view = new DataView(raw.buffer, raw.byteOffset + 1, raw.byteLength - 1);
+    if (view.byteLength > 0) break;
+    if (--attempts <= 0) throw new Error('设备无响应');
+    await new Promise(r => setTimeout(r, delay));
+    delay *= 2;
+  }
+  if (view.getUint32(CONFIG_SIZE - 4, true) !== crc32(view, CONFIG_SIZE - 4)) {
+    throw new Error('CRC 校验失败');
+  }
+  return view;
+}
+async function readResp(types) {
+  const view = await rawResp();
+  const out = [];
+  let pos = 0;
+  for (const t of types) {
+    if (t === 'u8')       { out.push(view.getUint8(pos)); pos += 1; }
+    else if (t === 'u16') { out.push(view.getUint16(pos, true)); pos += 2; }
+    else if (t === 'u32') { out.push(view.getUint32(pos, true)); pos += 4; }
+    else if (t === 'i32') { out.push(view.getInt32(pos, true));  pos += 4; }
+  }
+  return out;
+}
+async function readBytesResp(n) {
+  const view = await rawResp();
+  const bytes = new Uint8Array(n);
+  for (let i = 0; i < n; i++) bytes[i] = view.getUint8(i);
+  return bytes;
+}
+
+// ============================================================
+// 读取/写回完整配置
+// ============================================================
+async function loadFullConfig() {
+  await sendCmd(GET_CONFIG);
+  const [version, flags, unmapped_passthrough_layer_mask, partial_scroll_timeout,
+         mapping_count, our_usage_count, their_usage_count, interval_override,
+         tap_hold_threshold, gpio_debounce_time_ms, our_descriptor_number,
+         macro_entry_duration, quirk_count] =
+    await readResp(['u8','u8','u8','u32','u16','u32','u32','u8','u32','u8','u8','u8','u16']);
+
+  if (version !== CONFIG_VERSION) {
+    throw new Error(`固件配置版本 ${version} 与本工具支持的 ${CONFIG_VERSION} 不一致`);
+  }
+
+  const c = {
+    flags, unmapped_passthrough_layer_mask, partial_scroll_timeout,
+    interval_override, tap_hold_threshold, gpio_debounce_time_ms,
+    our_descriptor_number, macro_entry_duration,
+    mappings: [], expressions: [], macros: [], quirks: [],
+  };
+
+  for (let i = 0; i < mapping_count; i++) {
+    await sendCmd(GET_MAPPING, [['u32', i]]);
+    const [tu, su, sc, lm, mf, hp] = await readResp(['u32','u32','i32','u8','u8','u8']);
+    c.mappings.push({ target_usage: tu, source_usage: su, scaling: sc,
+                      layer_mask: lm, flags: mf, hub_ports: hp });
+  }
+
+  for (let ei = 0; ei < NEXPRESSIONS; ei++) {
+    let elems = [];
+    let i = 0;
+    while (true) {
+      await sendCmd(GET_EXPRESSION, [['u32', ei], ['u32', i]]);
+      const data = await readBytesResp(28);
+      const nelems = data[0];
+      if (nelems === 0) break;
+      let p = 1;
+      for (let j = 0; j < nelems; j++) {
+        const op = data[p++];
+        elems.push(op);
+        if (op === OP_PUSH || op === OP_PUSH_USAGE) {
+          elems.push(data[p++], data[p++], data[p++], data[p++]);
+        }
+      }
+      i += nelems;
+    }
+    c.expressions.push(new Uint8Array(elems));
+  }
+
+  for (let mi = 0; mi < NMACROS; mi++) {
+    let items = [];
+    let i = 0;
+    let keep = true;
+    while (keep) {
+      await sendCmd(GET_MACRO, [['u32', mi], ['u32', i]]);
+      const r = await readResp(['u8','u32','u32','u32','u32','u32','u32']);
+      const nitems = r[0];
+      if (nitems < MACRO_ITEMS_IN_PACKET) keep = false;
+      for (let j = 0; j < nitems; j++) items.push(r[1 + j]);
+      i += MACRO_ITEMS_IN_PACKET;
+    }
+    c.macros.push(items);
+  }
+
+  for (let qi = 0; qi < quirk_count; qi++) {
+    await sendCmd(GET_QUIRK, [['u32', qi]]);
+    const [vid, pid, intf, rid, usage, bp, sf] = await readResp(['u16','u16','u8','u8','u32','u16','u8']);
+    c.quirks.push({ vendor_id: vid, product_id: pid, interface: intf,
+                    report_id: rid, usage, bitpos: bp, size_flags: sf });
+  }
+
+  return c;
+}
+
+async function saveFullConfig(c) {
+  await sendCmd(SUSPEND);
+  await sendCmd(SET_CONFIG, [
+    ['u8', c.flags],
+    ['u8', c.unmapped_passthrough_layer_mask],
+    ['u32', c.partial_scroll_timeout],
+    ['u8', c.interval_override],
+    ['u32', c.tap_hold_threshold],
+    ['u8', c.gpio_debounce_time_ms],
+    ['u8', c.our_descriptor_number],
+    ['u8', c.macro_entry_duration],
+  ]);
+
+  await sendCmd(CLEAR_MAPPING);
+  for (const m of c.mappings) {
+    await sendCmd(ADD_MAPPING, [
+      ['u32', m.target_usage], ['u32', m.source_usage],
+      ['i32', m.scaling], ['u8', m.layer_mask],
+      ['u8', m.flags], ['u8', m.hub_ports],
+    ]);
+  }
+
+  await sendCmd(CLEAR_MACROS);
+  for (let mi = 0; mi < c.macros.length && mi < NMACROS; mi++) {
+    const items = c.macros[mi];
+    for (let i = 0; i < items.length; i += MACRO_ITEMS_IN_PACKET) {
+      const chunk = items.slice(i, i + MACRO_ITEMS_IN_PACKET);
+      const fields = [['u8', mi], ['u8', chunk.length]];
+      for (const u of chunk) fields.push(['u32', u]);
+      await sendCmd(APPEND_TO_MACRO, fields);
+    }
+  }
+
+  await sendCmd(CLEAR_EXPRESSIONS);
+  for (let ei = 0; ei < c.expressions.length && ei < NEXPRESSIONS; ei++) {
+    const bytes = c.expressions[ei];
+    let pos = 0;
+    while (pos < bytes.length) {
+      let bytesLeft = 24;
+      let nelems = 0;
+      let pkt = [];
+      while (pos < bytes.length && bytesLeft > 0) {
+        const op = bytes[pos];
+        const isPush = (op === OP_PUSH || op === OP_PUSH_USAGE);
+        const need = isPush ? 5 : 1;
+        if (need > bytesLeft) break;
+        pkt.push(op);
+        if (isPush) pkt.push(bytes[pos+1], bytes[pos+2], bytes[pos+3], bytes[pos+4]);
+        pos += need;
+        bytesLeft -= need;
+        nelems++;
+      }
+      const fields = [['u8', ei], ['u8', nelems]];
+      for (const b of pkt) fields.push(['u8', b]);
+      await sendCmd(APPEND_TO_EXPRESSION, fields);
+    }
+  }
+
+  await sendCmd(CLEAR_QUIRKS);
+  for (const q of c.quirks) {
+    await sendCmd(ADD_QUIRK, [
+      ['u16', q.vendor_id], ['u16', q.product_id],
+      ['u8', q.interface], ['u8', q.report_id],
+      ['u32', q.usage], ['u16', q.bitpos], ['u8', q.size_flags],
+    ]);
+  }
+
+  await sendCmd(SET_SOCD_ENABLED, [['i32', c.socd_enabled ? 1 : 0]]);
+
+  await sendCmd(PERSIST_CONFIG);
+
+  let rc;
+  try {
+    [rc] = await readResp(['u8']);
+  } catch (e) {
+    showStatus('配置已写入，设备正在重启，等待重连...', 'info');
+    await waitForReconnect();
+    rc = PERSIST_CONFIG_SUCCESS;
+  }
+
+  try {
+    await sendCmd(RESUME);
+  } catch (e) {
+    if (!device || !device.opened) await waitForReconnect();
+    if (device && device.opened) await sendCmd(RESUME);
+  }
+
+  return rc;
+}
+
+async function waitForReconnect(timeoutMs = 15000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await new Promise(r => setTimeout(r, 300));
+    const devices = await navigator.hid.getDevices();
+    const dev = devices.find(d => isRemapperDevice(d));
+    if (dev) {
+      if (!dev.opened) await dev.open();
+      device = dev;
+      $('connect').textContent = '已连接';
+      $('connect').disabled = true;
+      $('refresh').disabled = false;
+      return;
+    }
+  }
+  throw new Error('等待设备重连超时，请手动重新插拔后点击“连接设备”');
+}
+
+function expressionIsCorrect(bytes) {
+  return bytes.length === 5 && bytes[0] === OP_PUSH &&
+         bytes[1] === 0xE8 && bytes[2] === 0x03 && bytes[3] === 0x00 && bytes[4] === 0x00;
+}
+function findMappingIndex(c, target_usage) {
+  return c.mappings.findIndex(m => m.target_usage === target_usage && m.source_usage === SOURCE_USAGE);
+}
+function getMappingScaling(c, target_usage, fallback) {
+  const i = findMappingIndex(c, target_usage);
+  return i === -1 ? fallback : c.mappings[i].scaling;
+}
+function setMappingScaling(c, target_usage, scaling) {
+  const i = findMappingIndex(c, target_usage);
+  if (i === -1) throw new Error(`mapping target=0x${target_usage.toString(16)} 缺失`);
+  c.mappings[i].scaling = scaling;
+}
+
+// ============================================================
+// 灵敏度 ↔ 倍率换算
+// ============================================================
+function computeMultiplier() {
+  const game = parseFloat($('gameSens').value);
+  if (!isFinite(game) || game <= 0) return NaN;
+  return BASE_SENS / game;
+}
+
+function updateMultDisplay() {
+  const m = computeMultiplier();
+  const warn = $('multWarn');
+  const disp = $('multDisplay');
+
+  if (isNaN(m)) {
+    $('multValue').textContent = '—';
+    warn.style.display = 'none';
+    disp.classList.remove('out-of-range');
+    $('applyAll').disabled = true;
+    return;
+  }
+
+  $('multValue').textContent = m.toFixed(3) + 'x';
+  const scale = Math.round(m * 1000);
+  if (scale < SCALE_MIN || scale > SCALE_MAX) {
+    warn.style.display = 'inline';
+    disp.classList.add('out-of-range');
+    $('applyAll').disabled = true;
+  } else {
+    warn.style.display = 'none';
+    disp.classList.remove('out-of-range');
+    $('applyAll').disabled = !device || !cfg;
+  }
+}
+
+// ============================================================
+// CS / 跳投 / 大跳 / 关闭键 UI
+// ============================================================
+function getCsItem(key) { return document.querySelector(`.cs-item[data-key="${key}"]`); }
+function getCsState(key) {
+  const item = getCsItem(key);
+  if (!item) return { enabled: false, delay: 0 };
+  const en  = item.querySelector('.cs-en').checked;
+  const del = parseInt(item.querySelector('.cs-delay').value, 10);
+  return { enabled: en, delay: isFinite(del) ? del : 0 };
+}
+function setCsState(key, enabled, delay) {
+  const item = getCsItem(key);
+  if (!item) return;
+  item.querySelector('.cs-en').checked = enabled;
+  if (delay > 0) item.querySelector('.cs-delay').value = delay;
+  updateCsItemStyle(item);
+}
+function updateCsItemStyle(item) {
+  const en = item.querySelector('.cs-en').checked;
+  item.classList.toggle('on', en);
+  const delEl = item.querySelector('.cs-delay');
+  if (delEl) delEl.disabled = !en;
+}
+
+// 通用：让一行的 disabled 状态跟随某个开关
+function bindRowEnable(rowEl, checkEl, otherEls) {
+  const sync = () => {
+    rowEl.classList.toggle('on', checkEl.checked);
+    for (const el of otherEls) el.disabled = !checkEl.checked;
+  };
+  checkEl.addEventListener('change', sync);
+  sync();
+}
+
+// ============================================================
+// 回正帧数：滑块 ↔ 数字 ↔ 预设钮 三向同步
+// ============================================================
+function clampReturnFrames(v) {
+  if (!isFinite(v)) v = RETURN_FRAMES_DEFAULT;
+  v = Math.round(v);
+  if (v < RETURN_FRAMES_MIN) v = RETURN_FRAMES_MIN;
+  if (v > RETURN_FRAMES_MAX) v = RETURN_FRAMES_MAX;
+  return v;
+}
+function setReturnFramesUI(v) {
+  v = clampReturnFrames(v);
+  const slider = $('retFramesSlider');
+  const num    = $('retFramesNum');
+  if (slider && slider.value !== String(v)) slider.value = String(v);
+  if (num    && num.value    !== String(v)) num.value    = String(v);
+  const showF = $('retFramesShow');
+  const showM = $('retMsShow');
+  if (showF) showF.textContent = String(v);
+  if (showM) showM.textContent = String(v);   // 假设 1ms / 帧
+  // 高亮匹配的预设按钮
+  document.querySelectorAll('.ret-preset').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.v, 10) === v);
+  });
+}
+function bindReturnFramesRow() {
+  const slider = $('retFramesSlider');
+  const num    = $('retFramesNum');
+  if (slider) {
+    slider.addEventListener('input', () => {
+      setReturnFramesUI(parseInt(slider.value, 10));
+      refreshLiveConflicts();
+    });
+  }
+  if (num) {
+    const apply = () => {
+      setReturnFramesUI(parseInt(num.value, 10));
+      refreshLiveConflicts();
+    };
+    num.addEventListener('input',  apply);
+    num.addEventListener('change', apply);
+  }
+  document.querySelectorAll('.ret-preset').forEach(b => {
+    b.addEventListener('click', () => {
+      setReturnFramesUI(parseInt(b.dataset.v, 10));
+      refreshLiveConflicts();
+    });
+  });
+}
+
+// ============================================================
+// 下拉框选项填充
+// ============================================================
+function populateJtKeySelect(sel) {
+  // 跳投触发键：键盘 + 鼠标侧键
+  sel.innerHTML = '';
+  const optgKb = document.createElement('optgroup');
+  optgKb.label = '键盘';
+  for (const k of KEYBOARD_KEYS) {
+    const o = document.createElement('option');
+    o.value = String(kbUsage(k.code));
+    o.textContent = k.name;
+    optgKb.appendChild(o);
+  }
+  sel.appendChild(optgKb);
+  const optgMs = document.createElement('optgroup');
+  optgMs.label = '鼠标';
+  for (const m of MOUSE_BUTTONS) {
+    const o = document.createElement('option');
+    o.value = String(m.usage);
+    o.textContent = m.name;
+    optgMs.appendChild(o);
+  }
+  sel.appendChild(optgMs);
+}
+
+function populateDisableKeySelect(sel) {
+  // 自定义关闭压枪键：键盘 + 鼠标侧键
+  populateJtKeySelect(sel);
+}
+
+function populateMouseButtonSelect(sel) {
+  sel.innerHTML = '';
+  for (const m of MOUSE_BUTTONS) {
+    const usage_lo = m.usage & 0xFF;   // 4..8
+    const o = document.createElement('option');
+    o.value = String(usage_lo);
+    o.textContent = m.name;
+    sel.appendChild(o);
+  }
+}
+
+function populateTriggerTypeSelect(sel) {
+  sel.innerHTML = '';
+  for (const k of Object.keys(TRIGGER_LABELS)) {
+    const o = document.createElement('option');
+    o.value = k;
+    o.textContent = TRIGGER_LABELS[k];
+    sel.appendChild(o);
+  }
+}
+
+function populateGunSelect(sel) {
+  sel.innerHTML = '';
+  for (let i = 0; i < GUN_NAMES.length; i++) {
+    const o = document.createElement('option');
+    o.value = String(i);
+    o.textContent = GUN_NAMES[i];
+    sel.appendChild(o);
+  }
+}
+
+function populateKbKeySelect(sel) {
+  // 键盘-only 选择器（用于 4 个 kb-recoil 槽）
+  sel.innerHTML = '';
+  for (const k of KEYBOARD_KEYS) {
+    const o = document.createElement('option');
+    o.value = String(k.code);
+    o.textContent = k.name;
+    sel.appendChild(o);
+  }
+}
+
+// ============================================================
+// 构造枪列表 / 键盘-recoil 列表
+// ============================================================
+function buildGunRow(name) {
+  const gunId = GUN_NAMES.indexOf(name);
+  const row = document.createElement('div');
+  row.className = 'gun-row';
+  row.dataset.gunId = String(gunId);
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'gun-en';
+
+  const nm = document.createElement('div');
+  nm.className = 'gun-name';
+  nm.textContent = name;
+
+  const btnSel = document.createElement('select');
+  btnSel.className = 'gun-btn';
+  populateMouseButtonSelect(btnSel);
+
+  const trSel = document.createElement('select');
+  trSel.className = 'gun-trigger';
+  populateTriggerTypeSelect(trSel);
+
+  // 默认按钮值
+  const dflt = DEFAULT_GUN_TRIGGER[name];
+  if (dflt) {
+    btnSel.value = String(dflt.button);
+    trSel.value  = String(dflt.trigger);
+  } else {
+    btnSel.value = '5';
+    trSel.value  = '1';
+  }
+
+  row.appendChild(cb);
+  row.appendChild(nm);
+  row.appendChild(btnSel);
+  row.appendChild(trSel);
+
+  bindRowEnable(row, cb, [btnSel, trSel]);
+  return row;
+}
+
+function buildKbrecRow(idx) {
+  const row = document.createElement('div');
+  row.className = 'kbrec-row';
+  row.dataset.slot = String(idx);
+
+  const cb = document.createElement('input');
+  cb.type = 'checkbox';
+  cb.className = 'kbrec-en';
+
+  const lbl = document.createElement('div');
+  lbl.className = 'label-text';
+  lbl.textContent = '槽 ' + (idx + 1);
+
+  const keySel = document.createElement('select');
+  keySel.className = 'kbrec-key';
+  populateKbKeySelect(keySel);
+
+  const gunSel = document.createElement('select');
+  gunSel.className = 'kbrec-gun';
+  populateGunSelect(gunSel);
+
+  row.appendChild(cb);
+  row.appendChild(lbl);
+  row.appendChild(keySel);
+  row.appendChild(gunSel);
+
+  bindRowEnable(row, cb, [keySel, gunSel]);
+  return row;
+}
+
+function buildAllUIWidgets() {
+  // 枪列表（分组）
+  for (const name of GUN_GROUPS.rifles)  $('gunsRifles').appendChild(buildGunRow(name));
+  for (const name of GUN_GROUPS.smgs)    $('gunsSMGs').appendChild(buildGunRow(name));
+  for (const name of GUN_GROUPS.shotgun) $('gunsShotgun').appendChild(buildGunRow(name));
+  for (const name of GUN_GROUPS.lmg)     $('gunsLMG').appendChild(buildGunRow(name));
+  for (const name of GUN_GROUPS.pistols) $('gunsPistols').appendChild(buildGunRow(name));
+
+  // （VALORANT 版：键盘装弹槽 / 跳投 / 急停总开关已移除）
+
+  // 自定义关闭键 7 个下拉
+  document.querySelectorAll('.dk-key').forEach(populateDisableKeySelect);
+  document.querySelectorAll('.dk-key').forEach(sel => {
+    sel.value = String(kbUsage(0x09));  // 默认 F
+  });
+
+  // 关闭压枪键各行的 disable 同步
+  document.querySelectorAll('.disable-item').forEach(item => {
+    const cb  = item.querySelector('.dk-en');
+    const sel = item.querySelector('.dk-key');
+    bindRowEnable(item, cb, [sel]);
+  });
+
+  // CS 4 + 4 grid
+  document.querySelectorAll('.cs-item').forEach(item => {
+    const cb = item.querySelector('.cs-en');
+    cb.addEventListener('change', () => updateCsItemStyle(item));
+    updateCsItemStyle(item);
+  });
+
+  // 回正帧数行
+  bindReturnFramesRow();
+
+  // —— 全局：任何与"键位 / 触发"相关的输入变化都重算实时冲突 —— //
+  const refreshTargets = [
+    '.gun-en', '.gun-btn', '.gun-trigger',
+    '.dk-en', '.dk-key',
+  ];
+  document.querySelectorAll(refreshTargets.join(',')).forEach(el => {
+    el.addEventListener('change', refreshLiveConflicts);
+    el.addEventListener('input',  refreshLiveConflicts);
+  });
+  // 跳投：键 + 启用 + 延迟变化 → 也要重算（跳投键参与冲突）
+  ['jtEn', 'jtKey', 'jtDelay', 'csToggleKey'].forEach(id => {
+    const el = $(id);
+    if (el) {
+      el.addEventListener('change', refreshLiveConflicts);
+      el.addEventListener('input',  refreshLiveConflicts);
+    }
+  });
+
+  // SOCD 大写开关
+  const socdCb = $('socdToggle');
+  const socdRow = $('socdToggleRow');
+  if (socdCb && socdRow) {
+    socdCb.addEventListener('change', () => {
+      socdRow.classList.toggle('on', socdCb.checked);
+    });
+  }
+}
+
+// ============================================================
+// UI ↔ mapping.scaling 编码/解码
+// ============================================================
+function encodeGunCfg(buttonId, triggerType) {
+  // bits 0-7 button; bits 8-15 trigger. 与固件 (trig_type << 8) | btn_offset 对齐
+  return ((triggerType & 0xFF) << 8) | (buttonId & 0xFF);
+}
+function decodeGunCfg(s) {
+  if (s === 0) return { enabled: false, button: 5, trigger: 1 };
+  return {
+    enabled: true,
+    button:  s & 0xFF,
+    trigger: (s >>> 8) & 0xFF,
+  };
+}
+function encodeKbrec(gunId, keycode) {
+  return (((gunId + 1) & 0xFF) << 16) | (keycode & 0xFFFF);
+}
+function decodeKbrec(s) {
+  if (s === 0) return { enabled: false, gunId: 0, keycode: 0 };
+  const gunPlus1 = (s >>> 16) & 0xFF;
+  if (gunPlus1 < 1 || gunPlus1 > 8) return { enabled: false, gunId: 0, keycode: 0 };
+  return { enabled: true, gunId: gunPlus1 - 1, keycode: s & 0xFFFF };
+}
+
+// ============================================================
+// HID usage → 显示名
+// ============================================================
+function kbCodeToName(code) {
+  const k = KEYBOARD_KEYS.find(x => x.code === code);
+  return k ? k.name : `KB[0x${code.toString(16).toUpperCase()}]`;
+}
+function usageToName(usage) {
+  if (!isFinite(usage) || usage === 0) return '—';
+  const page = (usage >>> 16) & 0xFFFF;
+  const id   = usage & 0xFFFF;
+  if (page === 0x0007) return kbCodeToName(id);
+  if (page === 0x0009) {
+    const m = MOUSE_BUTTONS.find(x => (x.usage & 0xFFFF) === id);
+    return m ? m.name : `MB[0x${id.toString(16).toUpperCase()}]`;
+  }
+  return `0x${usage.toString(16).toUpperCase().padStart(8, '0')}`;
+}
+
+// ============================================================
+// 改动列表（diff）
+// ============================================================
+const CS_DESC = {
+  A:  '松开 A → 注入 D',
+  D:  '松开 D → 注入 A',
+  W:  '松开 W → 注入 S',
+  S:  '松开 S → 注入 W',
+  WA: '对角 W+A → S+D',
+  WD: '对角 W+D → S+A',
+  SA: '对角 S+A → W+D',
+  SD: '对角 S+D → W+A',
+};
+
+function buildCsDiff(newMap) {
+  const out = [];
+  // CS 8 项
+  for (const k of CS_KEYS) {
+    const reg  = CS_REG[k];
+    const oldV = getMappingScaling(cfg, reg, 0);
+    const newV = newMap.get(reg) || 0;
+    if (oldV === newV) continue;
+    const d = CS_DESC[k];
+    if (oldV === 0 && newV > 0) out.push({ type:'add',    text: `${d}：启用 ${newV}ms` });
+    else if (oldV > 0 && newV === 0) out.push({ type:'remove', text: `${d}：关闭` });
+    else out.push({ type:'change', text: `${d}：${oldV}ms → ${newV}ms` });
+  }
+  // 跳投
+  const oldD = getMappingScaling(cfg, REG_JT_DELAY, 0);
+  const oldK = getMappingScaling(cfg, REG_JT_KEY,   0);
+  const newD = newMap.get(REG_JT_DELAY) || 0;
+  const newK = newMap.get(REG_JT_KEY)   || 0;
+  const wasJt  = oldD > 0 && oldK > 0;
+  const willJt = newD > 0 && newK > 0;
+  if (wasJt !== willJt) {
+    out.push(willJt
+      ? { type:'add',    text: `跳投：启用（${usageToName(newK)}，${newD}ms）` }
+      : { type:'remove', text: `跳投：关闭` });
+  } else if (wasJt && (oldD !== newD || oldK !== newK)) {
+    out.push({ type:'change', text: `跳投：${usageToName(oldK)} ${oldD}ms → ${usageToName(newK)} ${newD}ms` });
+  }
+  // 大跳
+  const oldBj = getMappingScaling(cfg, REG_BIG_JUMP, 0);
+  const newBj = newMap.get(REG_BIG_JUMP) || 0;
+  if (oldBj !== newBj) {
+    out.push(newBj
+      ? { type:'add',    text: '大跳（Space + LCtrl）：启用' }
+      : { type:'remove', text: '大跳（Space + LCtrl）：关闭' });
+  }
+  // 鼠标回正帧数
+  {
+    const oldRaw = getMappingScaling(cfg, REG_RETURN_FRAMES, 0);
+    const newRaw = newMap.get(REG_RETURN_FRAMES) || 0;
+    if (oldRaw !== newRaw) {
+      const oldV = oldRaw > 0 ? oldRaw : RETURN_FRAMES_DEFAULT;
+      const newV = newRaw > 0 ? newRaw : RETURN_FRAMES_DEFAULT;
+      out.push({
+        type: 'change',
+        text: `鼠标回正速度：${oldV} 帧 (${oldV} ms) → ${newV} 帧 (${newV} ms)`
+            + (newRaw === 0 ? '（恢复默认）' : ''),
+      });
+    }
+  }
+  // 7 个关闭压枪键
+  for (let i = 0; i < NUM_DISABLE; i++) {
+    const oldU = getMappingScaling(cfg, REG_DISABLE[i], 0);
+    const newU = newMap.get(REG_DISABLE[i]) || 0;
+    if (oldU === newU) continue;
+    const lbl = `关闭压枪 槽${i+1}`;
+    if (oldU === 0)      out.push({ type:'add',    text: `${lbl}：${usageToName(newU)}` });
+    else if (newU === 0) out.push({ type:'remove', text: `${lbl}：关闭（原 ${usageToName(oldU)}）` });
+    else                 out.push({ type:'change', text: `${lbl}：${usageToName(oldU)} → ${usageToName(newU)}` });
+  }
+  return out;
+}
+
+function buildGunsDiff(newMap) {
+  const out = [];
+  // 16 把枪
+  for (let i = 0; i < 8; i++) {
+    const oldS = getMappingScaling(cfg, REG_GUN[i], 0);
+    const newS = newMap.get(REG_GUN[i]) || 0;
+    if (oldS === newS) continue;
+    const name = GUN_NAMES[i];
+    const o = decodeGunCfg(oldS);
+    const n = decodeGunCfg(newS);
+    if (!o.enabled && n.enabled) {
+      out.push({ type:'add', text: `${name}：${BUTTON_LABELS[n.button]} / ${TRIGGER_LABELS[n.trigger]}` });
+    } else if (o.enabled && !n.enabled) {
+      out.push({ type:'remove', text: `${name}：关闭（原 ${BUTTON_LABELS[o.button]} / ${TRIGGER_LABELS[o.trigger]}）` });
+    } else {
+      out.push({ type:'change',
+        text: `${name}：${BUTTON_LABELS[o.button]}/${TRIGGER_LABELS[o.trigger]} → ${BUTTON_LABELS[n.button]}/${TRIGGER_LABELS[n.trigger]}` });
+    }
+  }
+  // 4 个键盘 → 枪
+  for (let i = 0; i < NUM_KBREC; i++) {
+    const oldS = getMappingScaling(cfg, REG_KBREC[i], 0);
+    const newS = newMap.get(REG_KBREC[i]) || 0;
+    if (oldS === newS) continue;
+    const lbl = `键盘压枪 槽${i+1}`;
+    const o = decodeKbrec(oldS);
+    const n = decodeKbrec(newS);
+    if (!o.enabled && n.enabled) {
+      out.push({ type:'add', text: `${lbl}：${kbCodeToName(n.keycode)} → ${GUN_NAMES[n.gunId]}` });
+    } else if (o.enabled && !n.enabled) {
+      out.push({ type:'remove', text: `${lbl}：关闭` });
+    } else {
+      out.push({ type:'change',
+        text: `${lbl}：${kbCodeToName(o.keycode)}/${GUN_NAMES[o.gunId]} → ${kbCodeToName(n.keycode)}/${GUN_NAMES[n.gunId]}` });
+    }
+  }
+  return out;
+}
+
+function buildSensDiff(newScaling) {
+  const oldScaling = getMappingScaling(cfg, TARGET_SENS, 1000);
+  if (oldScaling === newScaling) return [];
+  const fmtGame = s => s > 0 ? (BASE_SENS * 1000 / s).toFixed(2) : '?';
+  const fmtMult = s => (s / 1000).toFixed(3);
+  return [{
+    type: 'change',
+    text: `灵敏度：游戏内 ${fmtGame(oldScaling)} → ${fmtGame(newScaling)}（倍率 ${fmtMult(oldScaling)}x → ${fmtMult(newScaling)}x）`,
+  }];
+}
+
+// ============================================================
+// 冲突检测（基于"写入后"的整体效果，即未改动的 register 用当前 cfg 值）
+// ------------------------------------------------------------
+// 返回值：
+//   conflicts: [{ severity:'severe'|'medium', text:'...',
+//                 rows: [ {kind:'gun'|'kbrec'|'disable', id:number} ] }]
+//   rows 数组用于实时给具体行加红框；不传则只在弹窗里展示文字。
+// ============================================================
+function checkConflicts(newMap) {
+  const conflicts = [];
+  const effective = (reg) => newMap.has(reg) ? newMap.get(reg) : getMappingScaling(cfg, reg, 0);
+
+  // 收集"压枪相关"键
+  // 1. 关闭压枪键（7 槽）
+  const disableUsages = [];
+  for (let i = 0; i < NUM_DISABLE; i++) {
+    const u = effective(REG_DISABLE[i]);
+    if (u > 0) disableUsages.push({ slot: i + 1, idx: i, usage: u });
+  }
+  // 2. 跳投触发键
+  const jtDelay = effective(REG_JT_DELAY);
+  const jtKey   = effective(REG_JT_KEY);
+  const jtOn    = jtDelay > 0 && jtKey > 0;
+  // 3. 键盘 → 枪（4 槽）
+  const kbrecUsages = [];
+  for (let i = 0; i < NUM_KBREC; i++) {
+    const d = decodeKbrec(effective(REG_KBREC[i]));
+    if (d.enabled) kbrecUsages.push({
+      slot: i + 1, idx: i, keycode: d.keycode,
+      usage: kbUsage(d.keycode), gunId: d.gunId,
+    });
+  }
+  // 4. 16 把枪
+  const gunCombos = [];
+  for (let i = 0; i < 8; i++) {
+    const d = decodeGunCfg(effective(REG_GUN[i]));
+    if (d.enabled) gunCombos.push({ gunId: i, button: d.button, trigger: d.trigger });
+  }
+
+  // --- 同 (button, trigger) 组合被多把枪占用 ---
+  const byCombo = new Map();
+  for (const g of gunCombos) {
+    const k = `${g.button}|${g.trigger}`;
+    if (!byCombo.has(k)) byCombo.set(k, []);
+    byCombo.get(k).push(g);
+  }
+  for (const [k, list] of byCombo) {
+    if (list.length > 1) {
+      const [btn, tr] = k.split('|').map(Number);
+      const names = list.map(g => GUN_NAMES[g.gunId]).join(' / ');
+      conflicts.push({
+        severity: 'severe',
+        text: `多把枪共用 ${BUTTON_LABELS[btn]} / ${TRIGGER_LABELS[tr]}：${names}（列表上方先出现者生效，后者被覆盖）`,
+        rows: list.map(g => ({ kind: 'gun', id: g.gunId })),
+      });
+    }
+  }
+
+  // --- 键盘压枪键重复 ---
+  const byKbrec = new Map();
+  for (const k of kbrecUsages) {
+    if (!byKbrec.has(k.keycode)) byKbrec.set(k.keycode, []);
+    byKbrec.get(k.keycode).push(k);
+  }
+  for (const [code, list] of byKbrec) {
+    if (list.length > 1) {
+      conflicts.push({
+        severity: 'severe',
+        text: `键盘压枪键 ${kbCodeToName(code)} 重复出现在槽 ${list.map(x => x.slot).join('、')}`,
+        rows: list.map(x => ({ kind: 'kbrec', id: x.idx })),
+      });
+    }
+  }
+
+  // --- 关闭压枪键内部重复 ---
+  const byDis = new Map();
+  for (const d of disableUsages) {
+    if (!byDis.has(d.usage)) byDis.set(d.usage, []);
+    byDis.get(d.usage).push(d);
+  }
+  for (const [u, list] of byDis) {
+    if (list.length > 1) {
+      conflicts.push({
+        severity: 'medium',
+        text: `关闭压枪键 ${usageToName(u)} 重复出现在槽 ${list.map(x => x.slot).join('、')}`,
+        rows: list.map(x => ({ kind: 'disable', id: x.idx })),
+      });
+    }
+  }
+
+  // --- 关闭压枪键 vs 跳投触发键 ---
+  if (jtOn) {
+    for (const d of disableUsages) {
+      if (d.usage === jtKey) {
+        conflicts.push({
+          severity: 'severe',
+          text: `跳投触发键与"关闭压枪 槽${d.slot}"同为 ${usageToName(jtKey)}（按一次同时触发跳投与关闭）`,
+          rows: [{ kind: 'disable', id: d.idx }],
+        });
+      }
+    }
+  }
+
+  // --- 关闭压枪键 vs 键盘压枪键（同一完整 HID usage）---
+  for (const d of disableUsages) {
+    for (const k of kbrecUsages) {
+      if (d.usage === k.usage) {
+        conflicts.push({
+          severity: 'severe',
+          text: `"关闭压枪 槽${d.slot}"与"键盘压枪 槽${k.slot}"同为 ${usageToName(d.usage)}（既要触发压枪又要关闭）`,
+          rows: [{ kind: 'disable', id: d.idx }, { kind: 'kbrec', id: k.idx }],
+        });
+      }
+    }
+  }
+
+  // --- 跳投键 vs 键盘压枪键 ---
+  if (jtOn) {
+    for (const k of kbrecUsages) {
+      if (k.usage === jtKey) {
+        conflicts.push({
+          severity: 'severe',
+          text: `跳投触发键与"键盘压枪 槽${k.slot}"同为 ${usageToName(jtKey)}`,
+          rows: [{ kind: 'kbrec', id: k.idx }],
+        });
+      }
+    }
+  }
+
+  // --- 关闭压枪键(鼠标) vs 鼠标侧键压枪触发(button id) [新增] ---
+  // 关闭键是完整 HID usage（0x00090003..0x00090008 = B3..B8）
+  // 枪的 button 字段是 3..8（offset），等价于 0x00090003+offset
+  for (const d of disableUsages) {
+    const page = (d.usage >>> 16) & 0xFFFF;
+    if (page !== 0x0009) continue;          // 只检查鼠标键
+    const btnId = d.usage & 0xFF;           // 3..8
+    if (btnId < 3 || btnId > 8) continue;
+    const hits = gunCombos.filter(g => g.button === btnId);
+    if (hits.length > 0) {
+      const names = hits.map(g => `${GUN_NAMES[g.gunId]}(${TRIGGER_LABELS[g.trigger]})`).join('、');
+      conflicts.push({
+        severity: 'severe',
+        text: `"关闭压枪 槽${d.slot}" = ${BUTTON_LABELS[btnId]}，但 ${BUTTON_LABELS[btnId]} 也被用作压枪触发：${names}。按一次会同时压枪+关闭，必冲突。`,
+        rows: [
+          { kind: 'disable', id: d.idx },
+          ...hits.map(g => ({ kind: 'gun', id: g.gunId })),
+        ],
+      });
+    }
+  }
+
+  // --- 跳投键(鼠标) vs 鼠标侧键压枪触发 [新增] ---
+  if (jtOn) {
+    const page = (jtKey >>> 16) & 0xFFFF;
+    if (page === 0x0009) {
+      const btnId = jtKey & 0xFF;
+      if (btnId >= 3 && btnId <= 8) {
+        const hits = gunCombos.filter(g => g.button === btnId);
+        if (hits.length > 0) {
+          const names = hits.map(g => `${GUN_NAMES[g.gunId]}(${TRIGGER_LABELS[g.trigger]})`).join('、');
+          conflicts.push({
+            severity: 'severe',
+            text: `跳投触发键 = ${BUTTON_LABELS[btnId]}，但 ${BUTTON_LABELS[btnId]} 也被用作压枪触发：${names}。`,
+            rows: hits.map(g => ({ kind: 'gun', id: g.gunId })),
+          });
+        }
+      }
+    }
+  }
+
+  return conflicts;
+}
+
+// ============================================================
+// 实时冲突高亮（同时刷新顶部横幅 + 行级红框）
+// ============================================================
+function refreshLiveConflicts() {
+  // 先清掉所有旧高亮
+  document.querySelectorAll('.gun-row.conflict, .kbrec-row.conflict, .disable-item.conflict')
+    .forEach(el => el.classList.remove('conflict'));
+
+  let conflicts = [];
+  try {
+    if (!cfg) {
+      // 还没初始化时（device 未连接），只做 UI 内部的快速冲突检测
+      conflicts = checkConflictsUIOnly();
+    } else {
+      conflicts = checkConflicts(uiToScalings());
+    }
+  } catch (e) {
+    // 静默：避免 UI 构建过程中临时不一致导致报错
+    return;
+  }
+
+  // 行级红框
+  for (const c of conflicts) {
+    if (!c.rows) continue;
+    for (const r of c.rows) {
+      let el = null;
+      if (r.kind === 'gun') {
+        el = document.querySelector(`.gun-row[data-gun-id="${r.id}"]`);
+      } else if (r.kind === 'kbrec') {
+        el = document.querySelector(`.kbrec-row[data-slot="${r.id}"]`);
+      } else if (r.kind === 'disable') {
+        el = document.querySelector(`.disable-item[data-slot="${r.id}"]`);
+      }
+      if (el) el.classList.add('conflict');
+    }
+  }
+
+  // 顶部横幅
+  const bar  = $('liveConflictBar');
+  const list = $('liveConflictList');
+  if (!bar || !list) return;
+  if (conflicts.length === 0) {
+    bar.classList.add('hide');
+    list.innerHTML = '';
+    return;
+  }
+  bar.classList.remove('hide');
+  list.innerHTML = '';
+  for (const c of conflicts) {
+    const li = document.createElement('li');
+    if (c.severity !== 'severe') li.className = 'warn';
+    li.textContent = c.text;
+    list.appendChild(li);
+  }
+}
+
+// 在 cfg 还没读出来时（设备未连接、初始化前），仍想给行级提示用的轻量版本
+function checkConflictsUIOnly() {
+  // 构造一个"全 0 当前状态"的伪 cfg map 然后跑 checkConflicts —— 它对未在 newMap
+  // 出现的 register 会查 cfg；这里没 cfg 所以兜底为 0，逻辑等价。
+  const out = [];
+  const _savedCfg = cfg;
+  cfg = { mappings: [] };
+  try { return checkConflicts(uiToScalings()); }
+  finally { cfg = _savedCfg; }
+}
+
+// ============================================================
+// 确认弹窗
+// ------------------------------------------------------------
+// 调用方式：
+//   const r = await showConfirmModal({ title, subtitle, diff, conflicts,
+//                                      nameInput: { defaultValue, existingNames } });
+//   r.ok       — 用户是否确认
+//   r.name     — 如果传了 nameInput，则为用户填写的名字（已 trim）
+// 不传 nameInput 时只返回 { ok }
+// ============================================================
+let _modalResolve = null;
+let _modalNameMode = false;
+function showConfirmModal({ title, subtitle, diff, conflicts, nameInput }) {
+  return new Promise(resolve => {
+    _modalResolve = resolve;
+    _modalNameMode = !!nameInput;
+
+    $('modalTitle').textContent = title;
+    $('modalSubtitle').textContent = subtitle;
+
+    // 名称输入区
+    const nameSec = $('modalNameSection');
+    const nameEl  = $('modalNameInput');
+    const hintEl  = $('modalNameHint');
+    if (nameInput) {
+      nameSec.classList.remove('hide');
+      nameEl.value = (nameInput.defaultValue || '').slice(0, 20);
+      const existing = new Set((nameInput.existingNames || []).map(s => s.trim()));
+      const refreshHint = () => {
+        const v = nameEl.value.trim();
+        const btn = $('modalConfirm');
+        if (!v) {
+          hintEl.className = 'modal-name-hint err';
+          hintEl.textContent = '名称不能为空';
+          btn.disabled = true;
+          return;
+        }
+        btn.disabled = false;
+        if (existing.has(v)) {
+          hintEl.className = 'modal-name-hint warn';
+          hintEl.textContent = `已存在同名配置 "${v}"，确认将覆盖原值`;
+        } else {
+          hintEl.className = 'modal-name-hint';
+          hintEl.textContent = `最长 20 字 · 当前 ${v.length} / 20`;
+        }
+      };
+      nameEl.oninput = refreshHint;
+      refreshHint();
+      setTimeout(() => { nameEl.focus(); nameEl.select(); }, 50);
+    } else {
+      nameSec.classList.add('hide');
+      nameEl.oninput = null;
+      $('modalConfirm').disabled = false;
+    }
+
+    // 改动列表
+    const diffEl = $('modalDiff');
+    diffEl.innerHTML = '';
+    if (!diff || diff.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'diff-item diff-none';
+      li.textContent = '没有任何改动 — 设备上已是当前 UI 的值';
+      diffEl.appendChild(li);
+    } else {
+      for (const d of diff) {
+        const li = document.createElement('li');
+        li.className = 'diff-item diff-' + d.type;
+        const tag = document.createElement('span');
+        tag.className = 'diff-tag';
+        tag.textContent = d.type === 'add' ? '新增' : d.type === 'remove' ? '关闭' : '修改';
+        const txt = document.createElement('span');
+        txt.className = 'diff-text';
+        txt.textContent = d.text;
+        li.append(tag, txt);
+        diffEl.appendChild(li);
+      }
+    }
+
+    // 冲突列表
+    const cEl = $('modalConflicts');
+    cEl.innerHTML = '';
+    if (!conflicts || conflicts.length === 0) {
+      const ok = document.createElement('div');
+      ok.className = 'conflict-ok';
+      ok.innerHTML = '<span class="conflict-ok-icon">✓</span><span>未检测到键位冲突</span>';
+      cEl.appendChild(ok);
+    } else {
+      for (const c of conflicts) {
+        const div = document.createElement('div');
+        div.className = 'conflict-item conflict-' + c.severity;
+        const icon = document.createElement('span');
+        icon.className = 'conflict-icon';
+        icon.textContent = c.severity === 'severe' ? '⚠' : 'ⓘ';
+        const txt = document.createElement('span');
+        txt.textContent = c.text;
+        div.append(icon, txt);
+        cEl.appendChild(div);
+      }
+    }
+
+    $('modalBackdrop').classList.remove('hide');
+  });
+}
+function closeModal(confirmed) {
+  $('modalBackdrop').classList.add('hide');
+  const r = _modalResolve;
+  _modalResolve = null;
+  const result = { ok: !!confirmed };
+  if (confirmed && _modalNameMode) {
+    result.name = ($('modalNameInput').value || '').trim();
+  }
+  _modalNameMode = false;
+  if (r) r(result);
+}
+
+function uiToScalings() {
+  // 把所有 UI 状态收集为一个 { target_usage -> scaling } 映射
+  const out = new Map();
+
+  // CS A..SD
+  for (const k of CS_KEYS) {
+    const { enabled, delay } = getCsState(k);
+    let v = enabled ? delay : 0;
+    if (!isFinite(v) || v < 0) v = 0;
+    if (v > DELAY_MAX) v = DELAY_MAX;
+    out.set(CS_REG[k], v);
+  }
+  // （VALORANT 版：急停总开关 / 跳投 / 大跳 已移除，相关寄存器恒置 0）
+  out.set(REG_CS_TOGGLE_KEY, 0);
+  out.set(REG_JT_DELAY, 0);
+  out.set(REG_JT_KEY,   0);
+  out.set(REG_BIG_JUMP, 0);
+
+  // 鼠标回正帧数
+  {
+    let v = parseInt($('retFramesNum').value, 10);
+    if (!isFinite(v)) v = RETURN_FRAMES_DEFAULT;
+    if (v < RETURN_FRAMES_MIN) v = RETURN_FRAMES_MIN;
+    if (v > RETURN_FRAMES_MAX) v = RETURN_FRAMES_MAX;
+    // 等于默认值时存 0（固件读 0 = 用内置默认），方便和"未设置过"等同
+    out.set(REG_RETURN_FRAMES, (v === RETURN_FRAMES_DEFAULT) ? 0 : v);
+  }
+
+  // 4 个自定义关闭键
+  document.querySelectorAll('.disable-item').forEach(item => {
+    const slot = parseInt(item.dataset.slot, 10);
+    const en   = item.querySelector('.dk-en').checked;
+    const sel  = item.querySelector('.dk-key');
+    const usage = parseInt(sel.value, 10);
+    out.set(REG_DISABLE[slot], en && isFinite(usage) ? usage : 0);
+  });
+
+  // 16 把枪
+  for (let i = 0; i < 8; i++) out.set(REG_GUN[i], 0);
+  document.querySelectorAll('.gun-row').forEach(row => {
+    const gunId   = parseInt(row.dataset.gunId, 10);
+    const en      = row.querySelector('.gun-en').checked;
+    const btn     = parseInt(row.querySelector('.gun-btn').value, 10);
+    const trigger = parseInt(row.querySelector('.gun-trigger').value, 10);
+    if (en && gunId >= 0 && gunId < 8) {
+      out.set(REG_GUN[gunId], encodeGunCfg(btn, trigger));
+    }
+  });
+
+  // 4 个键盘 -> 枪
+  document.querySelectorAll('.kbrec-row').forEach(row => {
+    const slot   = parseInt(row.dataset.slot, 10);
+    const en     = row.querySelector('.kbrec-en').checked;
+    const code   = parseInt(row.querySelector('.kbrec-key').value, 10);
+    const gunId  = parseInt(row.querySelector('.kbrec-gun').value, 10);
+    out.set(REG_KBREC[slot], en ? encodeKbrec(gunId, code) : 0);
+  });
+
+  return out;
+}
+
+function applyScalingsToUI(c) {
+  // 灵敏度
+  const scale = getMappingScaling(c, TARGET_SENS, 1000);
+  const mult  = scale / 1000;
+  const game  = mult > 0 ? (BASE_SENS / mult) : NaN;
+  if (isFinite(game)) $('gameSens').value = game.toFixed(2);
+  updateMultDisplay();
+
+  // 回报率覆盖（interval_override 是 SET_CONFIG 字段，不是 mapping）
+  {
+    const v = c.interval_override | 0;
+    const sel = $('pollRate');
+    const allowed = ['0','1','2','4','8'];
+    sel.value = allowed.includes(String(v)) ? String(v) : '0';
+  }
+
+  // SOCD 开关
+  {
+    const cb = $('socdToggle');
+    if (cb) {
+      cb.checked = !!c.socd_enabled;
+      const row = $('socdToggleRow');
+      if (row) row.classList.toggle('on', cb.checked);
+    }
+  }
+
+  // CS
+  for (const k of CS_KEYS) {
+    const v = getMappingScaling(c, CS_REG[k], 0);
+    setCsState(k, v > 0, v);
+  }
+  // （VALORANT 版：急停总开关 / 跳投 / 大跳 已移除）
+
+  // 鼠标回正帧数（0 / 缺失 = 默认 120）
+  {
+    const raw = getMappingScaling(c, REG_RETURN_FRAMES, 0);
+    let v = raw > 0 ? raw : RETURN_FRAMES_DEFAULT;
+    if (v < RETURN_FRAMES_MIN) v = RETURN_FRAMES_MIN;
+    if (v > RETURN_FRAMES_MAX) v = RETURN_FRAMES_MAX;
+    setReturnFramesUI(v);
+  }
+
+  // 4 个关闭键
+  document.querySelectorAll('.disable-item').forEach(item => {
+    const slot = parseInt(item.dataset.slot, 10);
+    const usage = getMappingScaling(c, REG_DISABLE[slot], 0);
+    const sel = item.querySelector('.dk-key');
+    const cb  = item.querySelector('.dk-en');
+    if (usage > 0) {
+      const found = Array.from(sel.options).some(o => parseInt(o.value, 10) === usage);
+      if (found) {
+        sel.value = String(usage);
+        cb.checked = true;
+      } else {
+        // 未识别的 usage：保持槽未启用（不再在下拉里展示乱码项）
+        cb.checked = false;
+      }
+    } else {
+      cb.checked = false;
+    }
+    item.classList.toggle('on', cb.checked);
+    sel.disabled = !cb.checked;
+  });
+
+  // 16 把枪
+  document.querySelectorAll('.gun-row').forEach(row => {
+    const gunId = parseInt(row.dataset.gunId, 10);
+    const s = getMappingScaling(c, REG_GUN[gunId], 0);
+    const dec = decodeGunCfg(s);
+    const cb = row.querySelector('.gun-en');
+    const btnSel = row.querySelector('.gun-btn');
+    const trSel  = row.querySelector('.gun-trigger');
+    cb.checked = dec.enabled;
+    if (dec.enabled) {
+      btnSel.value = String(dec.button);
+      trSel.value  = String(dec.trigger);
+    }
+    row.classList.toggle('on', dec.enabled);
+    btnSel.disabled = !dec.enabled;
+    trSel.disabled  = !dec.enabled;
+  });
+
+  // 4 个键盘 -> 枪
+  document.querySelectorAll('.kbrec-row').forEach(row => {
+    const slot = parseInt(row.dataset.slot, 10);
+    const s    = getMappingScaling(c, REG_KBREC[slot], 0);
+    const dec  = decodeKbrec(s);
+    const cb = row.querySelector('.kbrec-en');
+    const keySel = row.querySelector('.kbrec-key');
+    const gunSel = row.querySelector('.kbrec-gun');
+    cb.checked = dec.enabled;
+    if (dec.enabled) {
+      keySel.value = String(dec.keycode);
+      gunSel.value = String(dec.gunId);
+    }
+    row.classList.toggle('on', dec.enabled);
+    keySel.disabled = !dec.enabled;
+    gunSel.disabled = !dec.enabled;
+  });
+
+  // 写入后刷新一次实时冲突高亮
+  refreshLiveConflicts();
+}
+
+// ============================================================
+// 业务：初始化（创建缺失的 mapping）
+// ============================================================
+async function doInitialize() {
+  showStatus('正在读取完整配置...', 'info');
+  $('initialize').disabled = true;
+  try {
+    const c = await loadFullConfig();
+    if (!expressionIsCorrect(c.expressions[0])) {
+      c.expressions[0] = new Uint8Array([OP_PUSH, 0xE8, 0x03, 0x00, 0x00]);
+    }
+    // 灵敏度 mapping：scaling=1000（= 1.0x），若已存在则保留用户值
+    if (findMappingIndex(c, TARGET_SENS) === -1) {
+      c.mappings.push({
+        target_usage: TARGET_SENS, source_usage: SOURCE_USAGE,
+        scaling: 1000, layer_mask: 1, flags: 0, hub_ports: 0,
+      });
+    }
+    // CS / JT / 大跳 / 回正帧数 / 急停总开关：地址未变，保留已有用户值（缺失时创建为 0）
+    const preserveAddrs = [
+      ...CS_KEYS.map(k => CS_REG[k]),
+      REG_JT_DELAY, REG_JT_KEY, REG_BIG_JUMP, REG_RETURN_FRAMES,
+      REG_CS_TOGGLE_KEY,
+    ];
+    for (const tu of preserveAddrs) {
+      if (findMappingIndex(c, tu) === -1) {
+        c.mappings.push({
+          target_usage: tu, source_usage: SOURCE_USAGE,
+          scaling: 0, layer_mask: 1, flags: 0, hub_ports: 0,
+        });
+      }
+    }
+    // 关闭键 / 枪 / 键盘装弹：这些地址含义在新布局中发生了变化，
+    // 强制清零（旧布局的残留值在这些地址上无意义，会让 UI 显示错乱默认）
+    const resetAddrs = [
+      ...REG_DISABLE, ...REG_GUN, ...REG_KBREC,
+    ];
+    for (const tu of resetAddrs) {
+      const i = findMappingIndex(c, tu);
+      if (i === -1) {
+        c.mappings.push({
+          target_usage: tu, source_usage: SOURCE_USAGE,
+          scaling: 0, layer_mask: 1, flags: 0, hub_ports: 0,
+        });
+      } else {
+        c.mappings[i].scaling = 0;
+      }
+    }
+    // 旧布局遗留地址（不在新布局里）也清零，避免设备 flash 里残留垃圾
+    // 注意：0xFFF5000D 已被新版用作"回正帧数"
+    //       0xFFF5000E 已被新版用作"急停总开关键"
+    const LEGACY_ADDRS = [
+      0xFFF5000F,                                     // 旧 disable 槽 3
+      0xFFF50021, 0xFFF50022, 0xFFF50023, 0xFFF50024, // 旧 kbrec 槽 1-4
+    ];
+    for (const tu of LEGACY_ADDRS) {
+      const i = findMappingIndex(c, tu);
+      if (i !== -1) c.mappings[i].scaling = 0;
+    }
+    showStatus('正在写入并持久化（2~5 秒）...', 'info');
+    const rc = await saveFullConfig(c);
+    if (rc !== PERSIST_CONFIG_SUCCESS) throw new Error(`persist 返回码 ${rc}`);
+    showStatus('✓ 初始化完成', 'ok');
+    cfg = await loadFullConfig();
+    enterMainMode();
+  } catch (e) {
+    console.error('初始化失败', e);
+    showStatus('初始化失败：' + e.message, 'err');
+    $('initialize').disabled = false;
+  }
+}
+
+// ============================================================
+// 业务：命名配置库（localStorage）+ 一键重置 + 选择恢复
+// ------------------------------------------------------------
+// 数据结构：
+//   localStorage['cs2cfg.configs.v1'] = JSON {
+//     version: 1,
+//     list: [ { name, ts, scalings: { hex_target -> scaling } } ]
+//   }
+// 约定：
+//   - 同名保存 = 覆盖该条目（更新 ts + scalings）
+//   - 用户命名条目上限 20 条，FIFO 踢最老
+//   - "(重置前自动备份)" 是特殊名，不计入 20 条上限，每次重置覆盖
+//   - 备份只在当前浏览器；换电脑/清缓存就丢
+// ============================================================
+const CONFIGS_KEY = 'cs2cfg.configs.v1';
+const LEGACY_BACKUP_KEY = 'cs2cfg.backup.v1';       // v1 单点备份
+const LAST_NAME_KEY = 'cs2cfg.lastName.v1';         // 最近一次使用的命名
+const AUTO_BACKUP_NAME = '(重置前自动备份)';
+const MAX_USER_CONFIGS = 20;
+
+function _safeReadJSON(key) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function loadConfigList() {
+  // 主存储
+  const data = _safeReadJSON(CONFIGS_KEY);
+  let list = (data && Array.isArray(data.list)) ? data.list.filter(
+    x => x && typeof x.name === 'string' && x.scalings && typeof x.scalings === 'object'
+  ) : [];
+
+  // 一次性迁移：把旧版单点备份转成一条 "(旧版自动备份)"
+  const legacy = _safeReadJSON(LEGACY_BACKUP_KEY);
+  if (legacy && legacy.scalings) {
+    if (!list.some(x => x.name === '(旧版自动备份)')) {
+      list.push({ name:'(旧版自动备份)', ts: legacy.ts || Date.now(), scalings: legacy.scalings });
+      saveConfigList(list);
+    }
+    try { localStorage.removeItem(LEGACY_BACKUP_KEY); } catch {}
+  }
+  return list;
+}
+
+function saveConfigList(list) {
+  try {
+    localStorage.setItem(CONFIGS_KEY, JSON.stringify({ version:1, list }));
+  } catch (e) { console.warn('写配置库失败:', e); }
+}
+
+function configNamesForDisplay(list) {
+  // 排序：用户命名按 ts 倒序在前；"(...)" 类自动条目排最后
+  const auto = list.filter(x => /^\(.*\)$/.test(x.name));
+  const user = list.filter(x => !/^\(.*\)$/.test(x.name));
+  user.sort((a,b) => b.ts - a.ts);
+  auto.sort((a,b) => b.ts - a.ts);
+  return [...user, ...auto];
+}
+
+function scalingsFromCfg(c) {
+  const snap = {};
+  for (const tu of ALL_DELAY_TARGETS) {
+    snap[tu.toString(16)] = getMappingScaling(c, tu, 0);
+  }
+  return snap;
+}
+
+function upsertConfig(name, scalings, opts = {}) {
+  const list = loadConfigList();
+  const idx = list.findIndex(x => x.name === name);
+  if (idx >= 0) {
+    list[idx] = { name, ts: Date.now(), scalings };
+  } else {
+    list.push({ name, ts: Date.now(), scalings });
+    // 容量控制：只算非自动条目
+    const userOnes = list.filter(x => !/^\(.*\)$/.test(x.name));
+    if (userOnes.length > MAX_USER_CONFIGS) {
+      // 找最老的用户条目踢掉
+      const oldest = userOnes.sort((a,b) => a.ts - b.ts)[0];
+      const oi = list.indexOf(oldest);
+      if (oi >= 0) list.splice(oi, 1);
+    }
+  }
+  saveConfigList(list);
+  if (!opts.silent && !/^\(.*\)$/.test(name)) {
+    try { localStorage.setItem(LAST_NAME_KEY, name); } catch {}
+  }
+}
+
+function deleteConfig(name) {
+  const list = loadConfigList().filter(x => x.name !== name);
+  saveConfigList(list);
+}
+
+function getLastUsedName() {
+  try { return localStorage.getItem(LAST_NAME_KEY) || ''; } catch { return ''; }
+}
+
+function isResetLikeState(c) {
+  if (!c) return false;
+  for (const tu of ALL_DELAY_TARGETS) {
+    const v = getMappingScaling(c, tu, 0);
+    if (tu === TARGET_SENS) { if (v !== 1000) return false; }
+    else                    { if (v !== 0)    return false; }
+  }
+  return true;
+}
+
+function fmtAge(ts) {
+  const min = Math.round((Date.now() - ts) / 60000);
+  if (min < 1)    return '刚刚';
+  if (min < 60)   return `${min} 分钟前`;
+  if (min < 1440) return `${Math.round(min/60)} 小时前`;
+  return `${Math.round(min/1440)} 天前`;
+}
+
+function populateRestoreDropdown(preselectName) {
+  const sel = $('restoreSelect');
+  const btn = $('restoreAll');
+  if (!sel || !btn) return;
+
+  const list = configNamesForDisplay(loadConfigList());
+  sel.innerHTML = '';
+  if (list.length === 0) {
+    const opt = document.createElement('option');
+    opt.value = '';
+    opt.textContent = '— 暂无保存的配置 —';
+    sel.appendChild(opt);
+    sel.disabled = true;
+    btn.disabled = true;
+  } else {
+    for (const x of list) {
+      const opt = document.createElement('option');
+      opt.value = x.name;
+      opt.textContent = `${x.name}  ·  ${fmtAge(x.ts)}`;
+      sel.appendChild(opt);
+    }
+    // 选中策略：优先 preselect、其次 lastName、再次第一项
+    const want = preselectName || getLastUsedName();
+    if (want && list.some(x => x.name === want)) sel.value = want;
+    sel.disabled = !device || !cfg;
+    btn.disabled = !device || !cfg;
+  }
+
+  // 副标题更新
+  const sub = $('resetBarSub');
+  if (sub) {
+    sub.textContent = list.length
+      ? `一键关掉所有功能 / 从下拉框选一个命名配置写回设备。当前 ${list.length} 条备份（最多 ${MAX_USER_CONFIGS} 条用户命名 + 自动备份）。`
+      : '一键关掉所有功能（键鼠直通）。在"保存全部配置"时给配置起个名字，就能在这里管理多套预设。';
+  }
+}
+
+async function oneClickReset() {
+  if (!device || !cfg) return;
+
+  const r = await showConfirmModal({
+    title: '关闭所有功能',
+    subtitle: '写入后键鼠按默认行为工作。当前设备配置会先存为 "(重置前自动备份)"，'
+            + '可在下拉框选中后还原。',
+    diff: [
+      { type:'remove', text:'反向急停 — 8 项全部关闭' },
+      { type:'remove', text:'跳投 + 大跳 — 关闭' },
+      { type:'modify', text:'鼠标回正速度 — 恢复默认 120 帧' },
+      { type:'remove', text:'压枪触发（鼠标键 → 枪）— 16 把枪全部关闭' },
+      { type:'remove', text:'自定义关闭键 — 7 个槽全部清空' },
+      { type:'remove', text:'压枪触发（键盘键 → 枪）— 4 个槽全部清空' },
+      { type:'modify', text:'灵敏度 — 恢复 1.0x（直通，输入不被缩放）' },
+    ],
+    conflicts: [],
+  });
+  if (!r.ok) return;
+
+  $('resetAll').disabled = true;
+  $('restoreAll').disabled = true;
+  $('applyAll').disabled = true;
+  try {
+    // —— 兜底：把当前设备配置存为 "(重置前自动备份)" —— //
+    if (!isResetLikeState(cfg)) {
+      upsertConfig(AUTO_BACKUP_NAME, scalingsFromCfg(cfg), { silent: true });
+    }
+
+    // —— 写 0 —— //
+    for (const tu of ALL_DELAY_TARGETS) {
+      setMappingScaling(cfg, tu, tu === TARGET_SENS ? 1000 : 0);
+    }
+    showStatus('正在写入并持久化（2~5 秒）...', 'info');
+    const rc = await saveFullConfig(cfg);
+    if (rc !== PERSIST_CONFIG_SUCCESS) throw new Error(`persist 返回码 ${rc}`);
+
+    cfg = await loadFullConfig();
+    const bad = [];
+    for (const tu of ALL_DELAY_TARGETS) {
+      const expect = (tu === TARGET_SENS) ? 1000 : 0;
+      const actual = getMappingScaling(cfg, tu, NaN);
+      if (actual !== expect) bad.push(`0x${tu.toString(16)}: ${actual}≠${expect}`);
+    }
+    if (bad.length) throw new Error('回读校验不一致：' + bad.join('; '));
+
+    applyScalingsToUI(cfg);
+    showStatus('✓ 所有功能已关闭，键鼠按默认行为工作', 'ok');
+  } catch (e) {
+    console.error('[oneClickReset] 失败', e);
+    showStatus('重置失败：' + e.message, 'err');
+  } finally {
+    $('resetAll').disabled = !device || !cfg;
+    $('applyAll').disabled = !device || !cfg;
+    populateRestoreDropdown(AUTO_BACKUP_NAME);
+  }
+}
+
+async function restoreSelectedConfig() {
+  if (!device || !cfg) return;
+  const sel = $('restoreSelect');
+  const name = sel ? sel.value : '';
+  if (!name) { showStatus('请先从下拉框选择一个配置', 'err'); return; }
+
+  const list = loadConfigList();
+  const entry = list.find(x => x.name === name);
+  if (!entry) { showStatus(`配置 "${name}" 不存在`, 'err'); return; }
+
+  // 构造差异行
+  const diff = [];
+  for (const tu of ALL_DELAY_TARGETS) {
+    const target = entry.scalings[tu.toString(16)] || 0;
+    const current = getMappingScaling(cfg, tu, 0);
+    if (target === current) continue;
+    const hex = `0x${tu.toString(16).toUpperCase()}`;
+    if (tu === TARGET_SENS) {
+      diff.push({ type:'modify', text:`灵敏度 ${(current/1000).toFixed(3)}x → ${(target/1000).toFixed(3)}x` });
+    } else if (current === 0 && target !== 0) {
+      diff.push({ type:'add',    text:`${hex} 重新启用（值 ${target}）` });
+    } else if (current !== 0 && target === 0) {
+      diff.push({ type:'remove', text:`${hex} 关闭` });
+    } else {
+      diff.push({ type:'modify', text:`${hex} ${current} → ${target}` });
+    }
+  }
+
+  const r = await showConfirmModal({
+    title: `恢复配置 "${name}"`,
+    subtitle: `把 "${name}"（${fmtAge(entry.ts)}）写回设备。`
+            + (diff.length === 0 ? ' 当前设备状态已与此配置一致，写入是空操作。' : ''),
+    diff,
+    conflicts: [],
+  });
+  if (!r.ok) return;
+
+  $('resetAll').disabled = true;
+  $('restoreAll').disabled = true;
+  $('applyAll').disabled = true;
+  try {
+    for (const tu of ALL_DELAY_TARGETS) {
+      const v = entry.scalings[tu.toString(16)] || 0;
+      setMappingScaling(cfg, tu, v);
+    }
+    showStatus('正在写入并持久化（2~5 秒）...', 'info');
+    const rc = await saveFullConfig(cfg);
+    if (rc !== PERSIST_CONFIG_SUCCESS) throw new Error(`persist 返回码 ${rc}`);
+
+    cfg = await loadFullConfig();
+    const bad = [];
+    for (const tu of ALL_DELAY_TARGETS) {
+      const expect = entry.scalings[tu.toString(16)] || 0;
+      const actual = getMappingScaling(cfg, tu, NaN);
+      if (actual !== expect) bad.push(`0x${tu.toString(16)}: ${actual}≠${expect}`);
+    }
+    if (bad.length) throw new Error('回读校验不一致：' + bad.join('; '));
+
+    applyScalingsToUI(cfg);
+    if (!/^\(.*\)$/.test(name)) {
+      try { localStorage.setItem(LAST_NAME_KEY, name); } catch {}
+    }
+    showStatus(`✓ 已恢复配置 "${name}"`, 'ok');
+  } catch (e) {
+    console.error('[restoreSelectedConfig] 失败', e);
+    showStatus('恢复失败：' + e.message, 'err');
+  } finally {
+    $('resetAll').disabled = !device || !cfg;
+    $('applyAll').disabled = !device || !cfg;
+    populateRestoreDropdown(name);
+  }
+}
+
+// ============================================================
+// 业务：写入全部配置（灵敏度 + CS + JT + 大跳 + 关闭键 + 16 枪 + 4 键盘压枪槽）
+// ============================================================
+async function applyAll() {
+  // —— 校验灵敏度 —— //
+  const game = parseFloat($('gameSens').value);
+  const m = computeMultiplier();
+  if (isNaN(m)) { showStatus('请输入有效的灵敏度', 'err'); return; }
+  const newSensScaling = Math.round(m * 1000);
+  if (newSensScaling < SCALE_MIN || newSensScaling > SCALE_MAX) {
+    showStatus(`换算后倍率 ${m.toFixed(3)}x 超出固件支持范围 (0.1~5.0)`, 'err');
+    return;
+  }
+
+  // —— 收集 UI 状态（含灵敏度） —— //
+  const map = uiToScalings();
+  map.set(TARGET_SENS, newSensScaling);
+
+  // —— 写入前确认弹窗（合并三块的 diff + 命名输入） —— //
+  const diff = [
+    ...buildSensDiff(newSensScaling),
+    ...buildCsDiff(map),
+    ...buildGunsDiff(map),
+  ];
+  const conflicts = checkConflicts(map);
+  // 默认名：下拉框当前选中（且不是自动备份）→ lastName → "我的配置"
+  const selVal = $('restoreSelect') ? $('restoreSelect').value : '';
+  const defaultName = (selVal && !/^\(.*\)$/.test(selVal))
+                      ? selVal
+                      : (getLastUsedName() || '我的配置');
+  const existingNames = loadConfigList().map(x => x.name);
+
+  const r = await showConfirmModal({
+    title: '保存全部配置',
+    subtitle: `给这次保存起个名字${diff.length ? `（共 ${diff.length} 项改动）` : ''}，将同时写入设备和命名配置库。`,
+    diff, conflicts,
+    nameInput: { defaultValue: defaultName, existingNames },
+  });
+  if (!r.ok) return;
+  const cfgName = r.name;
+  if (!cfgName) { showStatus('保存已取消：未填写名称', 'err'); return; }
+
+  // —— 实际写入 —— //
+  const allTargets = [
+    TARGET_SENS,
+    ...CS_KEYS.map(k => CS_REG[k]),
+    REG_JT_DELAY, REG_JT_KEY, REG_BIG_JUMP, REG_RETURN_FRAMES,
+    REG_CS_TOGGLE_KEY,
+    ...REG_DISABLE,
+    ...REG_GUN,
+    ...REG_KBREC,
+  ];
+
+  $('applyAll').disabled = true;
+  $('applyAllHint').style.display = 'none';
+  try {
+    for (const tu of allTargets) setMappingScaling(cfg, tu, map.get(tu) || 0);
+
+    // —— 回报率：把 UI 选项写回 cfg.interval_override —— //
+    {
+      const v = parseInt($('pollRate').value, 10);
+      cfg.interval_override = ([0,1,2,4,8].includes(v) ? v : 0);
+    }
+
+    // —— SOCD 大写开关 —— //
+    cfg.socd_enabled = $('socdToggle').checked ? 1 : 0;
+
+    showStatus('正在写入并持久化（2~5 秒）...', 'info');
+    const rc = await saveFullConfig(cfg);
+    if (rc !== PERSIST_CONFIG_SUCCESS) throw new Error(`persist 返回码 ${rc}`);
+
+    // —— 全量回读校验 —— //
+    cfg = await loadFullConfig();
+    const mismatch = [];
+    for (const tu of allTargets) {
+      const expected = map.get(tu) || 0;
+      const actual   = getMappingScaling(cfg, tu, NaN);
+      if (actual !== expected) {
+        mismatch.push(`0x${tu.toString(16)}: ${actual}≠${expected}`);
+      }
+    }
+    if (mismatch.length > 0) throw new Error('回读校验不一致：' + mismatch.join('; '));
+
+    showStatus(
+      `✓ 已保存到设备 + 命名配置库："${cfgName}" · 游戏内 ${game.toFixed(2)} → 倍率 ${m.toFixed(3)}x`,
+      'ok'
+    );
+
+    // —— 写入命名配置库 —— //
+    // 重置态（全 0 + 灵敏度 1.0x）不写库，避免一个用户名字下保存了"空配置"
+    if (!isResetLikeState(cfg)) {
+      upsertConfig(cfgName, scalingsFromCfg(cfg));
+    }
+    populateRestoreDropdown(cfgName);
+  } catch (e) {
+    console.error('[applyAll] 失败', e);
+    const hint = $('applyAllHint');
+    hint.textContent = '写入成功，请重新插拔设备';
+    hint.style.display = 'inline';
+  } finally {
+    $('applyAll').disabled = !device || !cfg;
+    updateMultDisplay();
+  }
+}
+
+// ============================================================
+// UI 模式切换
+// ============================================================
+function enterInitMode() {
+  $('initPanel').classList.remove('hide');
+  $('mainPanel').classList.add('hide');
+  $('initialize').disabled = false;
+}
+function enterMainMode() {
+  $('initPanel').classList.add('hide');
+  $('mainPanel').classList.remove('hide');
+  applyScalingsToUI(cfg);
+  populateRestoreDropdown();
+  $('flashFw').disabled = !device;
+  $('flashBSide').disabled = !device;
+}
+
+async function connect() {
+  try {
+    if (!('hid' in navigator)) {
+      showStatus('当前浏览器不支持 WebHID。请用 Chrome 或 Edge。', 'err');
+      return;
+    }
+    const list = await navigator.hid.requestDevice({
+      filters: [{ usagePage: REMAPPER_USAGE_PAGE, usage: REMAPPER_USAGE }]
+    });
+    const dev = list.find(d => isRemapperDevice(d));
+    if (!dev) { showStatus('未选择设备', 'err'); return; }
+    if (!dev.opened) await dev.open();
+    device = dev;
+    $('connect').textContent = '已连接';
+    $('connect').disabled = true;
+    $('refresh').disabled = false;
+    await reload();
+  } catch (e) {
+    console.error('connect 失败', e);
+    showStatus('连接失败：' + e.message, 'err');
+  }
+}
+
+async function reload() {
+  showStatus('正在读取设备配置...', 'info');
+  try {
+    cfg = await loadFullConfig();
+    const exprOk = expressionIsCorrect(cfg.expressions[0]);
+    const missing = [];
+    if (!exprOk) missing.push('Expression 1');
+    for (const t of ALL_DELAY_TARGETS) {
+      if (findMappingIndex(cfg, t) === -1) {
+        missing.push(`mapping[0x${t.toString(16)}]`);
+      }
+    }
+    if (missing.length > 0) {
+      enterInitMode();
+      // 只列出前几条，避免刷屏
+      const head = missing.slice(0, 3).join(', ');
+      const more = missing.length > 3 ? ` (+${missing.length - 3} 条)` : '';
+      showStatus(`未初始化：缺少 ${head}${more}`, 'warn');
+    } else {
+      enterMainMode();
+      statusEl.className = 'status hide';
+    }
+  } catch (e) {
+    console.error('reload 失败', e);
+    showStatus('读取失败：' + e.message, 'err');
+  }
+}
+
+// ============================================================
+// 事件绑定 + 启动
+// ============================================================
+buildAllUIWidgets();
+
+$('connect').addEventListener('click', connect);
+$('refresh').addEventListener('click', reload);
+$('initialize').addEventListener('click', doInitialize);
+
+// ============================================================
+// 刷固件按钮
+// ============================================================
+async function doFlashFirmware(bSide = false) {
+  if (!device) { showStatus('设备未连接', 'err'); return; }
+  const which = bSide ? 'B 侧' : '主固件';
+  const ok = confirm(
+    `确定刷${which}吗？\n\n` +
+    `点击后设备会立即重启进 BOOTSEL 模式，电脑上会出现一个名为 RPI-RP2 的盘符。\n` +
+    `把对应的 .uf2 文件拖到那个盘里就完成。\n\n` +
+    `配置不会丢，但刷完后你需要重新点"连接设备"。`
+  );
+  if (!ok) return;
+  const btn = bSide ? $('flashBSide') : $('flashFw');
+  btn.disabled = true;
+  try {
+    await sendCmd(bSide ? FLASH_B_SIDE : RESET_INTO_BOOTSEL);
+    showStatus(`已发送${which}刷机命令，请等待电脑出现 RPI-RP2 盘符`, 'ok');
+  } catch (e) {
+    // sendFeatureReport 在设备重启时报错是正常的——固件已经收到命令
+    console.log('[flash] 命令已发送（设备重启中）', e);
+    showStatus(`已发送${which}刷机命令，请等待电脑出现 RPI-RP2 盘符`, 'ok');
+  }
+}
+$('flashFw').addEventListener('click', () => doFlashFirmware(false));
+$('flashBSide').addEventListener('click', () => doFlashFirmware(true));
+$('applyAll').addEventListener('click', applyAll);
+$('resetAll').addEventListener('click', oneClickReset);
+$('restoreAll').addEventListener('click', restoreSelectedConfig);
+
+// 确认弹窗按钮
+$('modalConfirm').addEventListener('click', () => {
+  // 命名模式下，名称为空时不允许确认（refreshHint 会保证 disabled，但兜底一下）
+  if (_modalNameMode && !($('modalNameInput').value || '').trim()) return;
+  closeModal(true);
+});
+$('modalCancel').addEventListener('click',  () => closeModal(false));
+$('modalBackdrop').addEventListener('click', e => {
+  if (e.target === $('modalBackdrop')) closeModal(false);
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !$('modalBackdrop').classList.contains('hide')) {
+    closeModal(false);
+  }
+});
+// 命名输入框按 Enter = 等同于点"确认"
+$('modalNameInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    if (!$('modalConfirm').disabled) closeModal(true);
+  }
+});
+
+$('gameSens').addEventListener('input', updateMultDisplay);
+$('gameSens').addEventListener('keydown', e => {
+  if (e.key === 'Enter') applyAll();
+});
+
+// 预设按钮：仅填充输入值并刷新倍率显示，不再自动写入
+// （避免一点按钮就触发模态框；改完点底部"保存全部配置"统一写）
+document.querySelectorAll('.preset').forEach(b => {
+  b.addEventListener('click', () => {
+    $('gameSens').value = b.dataset.v;
+    updateMultDisplay();
+  });
+});
+
+if ('hid' in navigator) {
+  navigator.hid.addEventListener('connect', e => {
+    const dev = e.device;
+    if (isRemapperDevice(dev)) {
+      if (!device) {
+        dev.open().then(() => {
+          device = dev;
+          $('connect').textContent = '已连接';
+          $('connect').disabled = true;
+          $('refresh').disabled = false;
+        }).catch(() => {});
+      }
+    }
+  });
+  navigator.hid.addEventListener('disconnect', e => {
+    if (device && e.device === device) {
+      device = null;
+      $('connect').textContent = '连接设备';
+      $('connect').disabled = false;
+      $('refresh').disabled = true;
+      $('initPanel').classList.add('hide');
+      $('mainPanel').classList.add('hide');
+      showStatus('设备已断开', 'info');
+      populateRestoreDropdown();
+    }
+  });
+}
+
+// 初始填一次下拉框（也会触发旧版备份的迁移）
+populateRestoreDropdown();
+updateMultDisplay();
+// 启动时先跑一次冲突检测，防止默认值偶然就有冲突
+refreshLiveConflicts();
+</script>
+</body>
+</html>

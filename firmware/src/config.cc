@@ -1006,6 +1006,13 @@ void handle_set_report1(uint8_t report_id, uint8_t const* buffer, uint16_t bufsi
                 g_auto_armed_seq++;
                 break;
             }
+                case ConfigCommand::SET_SOCD_ENABLED: {
+                int32_t v;
+                memcpy(&v, buffer + 2, sizeof(v));
+                g_socd_enabled = (v != 0) ? 1 : 0;
+                g_socd_enabled_seq++;
+                break;
+            }
                 case ConfigCommand::GET_MAPPING:
                 case ConfigCommand::GET_OUR_USAGES:
                 case ConfigCommand::GET_THEIR_USAGES:

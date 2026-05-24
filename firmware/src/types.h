@@ -33,6 +33,7 @@ enum class ConfigCommand : int8_t {
     ADD_QUIRK = 24,
     GET_QUIRK = 25,
     SET_AUTO_ARMED = 26,
+    SET_SOCD_ENABLED = 27,
 };
 struct usage_def_t {
     uint8_t report_id;

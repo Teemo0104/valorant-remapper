@@ -78,4 +78,8 @@ extern volatile uint32_t g_auto_armed_seq;
 extern volatile int8_t   g_cs_enabled;
 extern volatile uint32_t g_cs_enabled_seq;
 
+// SOCD 清理开关：0 = 关闭；1 = 启用
+extern volatile int8_t   g_socd_enabled;
+extern volatile uint32_t g_socd_enabled_seq;
+
 #endif

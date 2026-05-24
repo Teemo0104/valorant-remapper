@@ -1274,6 +1274,54 @@ int32_t eval_expr(uint8_t expr, uint64_t now, bool auto_repeat) {
     return 0;
 }
 
+// SOCD 清理：中性优先（同时反向 = 全释放）
+// 作用域：WASD + 方向键；在 process_mapping 之前调用
+inline void apply_socd() {
+    if (!g_socd_enabled) {
+        return;
+    }
+
+    // HID Keyboard usages
+    constexpr uint32_t W = 0x0007001A;
+    constexpr uint32_t A = 0x00070004;
+    constexpr uint32_t S = 0x00070016;
+    constexpr uint32_t D = 0x00070007;
+    constexpr uint32_t UP    = 0x00070052;
+    constexpr uint32_t DOWN  = 0x00070051;
+    constexpr uint32_t LEFT  = 0x00070050;
+    constexpr uint32_t RIGHT = 0x0007004F;
+
+    int32_t* p_w  = get_state_ptr(W,  0);
+    int32_t* p_a  = get_state_ptr(A,  0);
+    int32_t* p_s  = get_state_ptr(S,  0);
+    int32_t* p_d  = get_state_ptr(D,  0);
+    int32_t* p_u  = get_state_ptr(UP,    0);
+    int32_t* p_dn = get_state_ptr(DOWN,  0);
+    int32_t* p_l  = get_state_ptr(LEFT,  0);
+    int32_t* p_r  = get_state_ptr(RIGHT, 0);
+
+    // 水平方向 A + D
+    if (p_a && p_d && (*p_a != 0) && (*p_d != 0)) {
+        *p_a = 0;
+        *p_d = 0;
+    }
+    // 垂直方向 W + S
+    if (p_w && p_s && (*p_w != 0) && (*p_s != 0)) {
+        *p_w = 0;
+        *p_s = 0;
+    }
+    // 方向键 左 + 右
+    if (p_l && p_r && (*p_l != 0) && (*p_r != 0)) {
+        *p_l = 0;
+        *p_r = 0;
+    }
+    // 方向键 上 + 下
+    if (p_u && p_dn && (*p_u != 0) && (*p_dn != 0)) {
+        *p_u = 0;
+        *p_dn = 0;
+    }
+}
+
 void process_mapping(bool auto_repeat) {
     if (suspended) {
         return;
@@ -1281,6 +1329,8 @@ void process_mapping(bool auto_repeat) {
 
     uint64_t now = get_time();
     frame_counter++;
+
+    apply_socd();
 
     for (auto& tap_hold : tap_hold_usages) {
         if ((*tap_hold.input_state != 0) && (*(tap_hold.input_state + PREV_STATE_OFFSET) == 0)) {
